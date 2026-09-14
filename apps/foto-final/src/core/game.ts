@@ -21,6 +21,9 @@ export type FoodKind =
 
 export type FoodRarity = "normal" | "rare" | "legendary";
 
+export type FoodVisualEffect =
+  "float" | "pulse" | "spin" | "electric" | "chaos";
+
 export type TimedEffectKind = "speed-boost" | "double-points";
 
 export interface TimedEffectDefinition {
@@ -39,8 +42,11 @@ export interface FoodDefinition {
   readonly rarity: FoodRarity;
   readonly weight: number;
   readonly points: number;
+  readonly experience: number;
   readonly growth: number;
   readonly color: number;
+  readonly visualScale: number;
+  readonly visualEffect: FoodVisualEffect;
   readonly effect?: TimedEffectDefinition;
 }
 
@@ -59,7 +65,7 @@ export type EvolutionId =
 export interface Evolution {
   readonly id: EvolutionId;
   readonly name: string;
-  readonly minEaten: number;
+  readonly minExperience: number;
   readonly tickMs: number;
   readonly scale: number;
   readonly headColor: number;
@@ -75,8 +81,11 @@ export const FOOD_CATALOG: Readonly<Record<FoodKind, FoodDefinition>> = {
     rarity: "legendary",
     weight: 3,
     points: 120,
+    experience: 8,
     growth: 4,
     color: 0xffd83d,
+    visualScale: 1.18,
+    visualEffect: "pulse",
   },
   "flying-pizza": {
     kind: "flying-pizza",
@@ -84,8 +93,11 @@ export const FOOD_CATALOG: Readonly<Record<FoodKind, FoodDefinition>> = {
     rarity: "normal",
     weight: 22,
     points: 15,
+    experience: 2,
     growth: 1,
     color: 0xffc94d,
+    visualScale: 1,
+    visualEffect: "spin",
   },
   "lost-robot": {
     kind: "lost-robot",
@@ -93,8 +105,11 @@ export const FOOD_CATALOG: Readonly<Record<FoodKind, FoodDefinition>> = {
     rarity: "rare",
     weight: 8,
     points: 20,
+    experience: 4,
     growth: 2,
     color: 0x90a4ae,
+    visualScale: 1.05,
+    visualEffect: "pulse",
   },
   "angry-emoji": {
     kind: "angry-emoji",
@@ -102,8 +117,11 @@ export const FOOD_CATALOG: Readonly<Record<FoodKind, FoodDefinition>> = {
     rarity: "normal",
     weight: 20,
     points: 12,
+    experience: 2,
     growth: 1,
     color: 0xffd23f,
+    visualScale: 1,
+    visualEffect: "pulse",
   },
   "sad-sock": {
     kind: "sad-sock",
@@ -111,8 +129,11 @@ export const FOOD_CATALOG: Readonly<Record<FoodKind, FoodDefinition>> = {
     rarity: "normal",
     weight: 20,
     points: 10,
+    experience: 2,
     growth: 1,
     color: 0x8f7aea,
+    visualScale: 0.94,
+    visualEffect: "float",
   },
   "duck-king": {
     kind: "duck-king",
@@ -120,8 +141,11 @@ export const FOOD_CATALOG: Readonly<Record<FoodKind, FoodDefinition>> = {
     rarity: "rare",
     weight: 7,
     points: 25,
+    experience: 4,
     growth: 2,
     color: 0xffe066,
+    visualScale: 1.08,
+    visualEffect: "float",
   },
   "cringe-energy": {
     kind: "cringe-energy",
@@ -129,8 +153,11 @@ export const FOOD_CATALOG: Readonly<Record<FoodKind, FoodDefinition>> = {
     rarity: "rare",
     weight: 5,
     points: 25,
+    experience: 4,
     growth: 1,
     color: 0xff4fd8,
+    visualScale: 1.12,
+    visualEffect: "electric",
     effect: { kind: "double-points", durationMs: 7_000 },
   },
   "influencer-avocado": {
@@ -139,8 +166,11 @@ export const FOOD_CATALOG: Readonly<Record<FoodKind, FoodDefinition>> = {
     rarity: "normal",
     weight: 15,
     points: 30,
+    experience: 2,
     growth: 1,
     color: 0x73c94f,
+    visualScale: 1.04,
+    visualEffect: "float",
   },
   "infinite-coffee": {
     kind: "infinite-coffee",
@@ -148,8 +178,11 @@ export const FOOD_CATALOG: Readonly<Record<FoodKind, FoodDefinition>> = {
     rarity: "rare",
     weight: 5,
     points: 25,
+    experience: 4,
     growth: 1,
     color: 0xd98c52,
+    visualScale: 1.08,
+    visualEffect: "pulse",
     effect: { kind: "speed-boost", durationMs: 6_000 },
   },
   "super-meme": {
@@ -158,8 +191,11 @@ export const FOOD_CATALOG: Readonly<Record<FoodKind, FoodDefinition>> = {
     rarity: "legendary",
     weight: 1,
     points: 300,
+    experience: 12,
     growth: 6,
     color: 0x5de8ff,
+    visualScale: 1.24,
+    visualEffect: "chaos",
   },
 };
 
@@ -171,7 +207,7 @@ export const EVOLUTIONS: readonly Evolution[] = Object.freeze([
   {
     id: "mini-bicho",
     name: "Mini Bicho Meme",
-    minEaten: 0,
+    minExperience: 0,
     tickMs: 150,
     scale: 0.82,
     headColor: 0xb9ff66,
@@ -182,7 +218,7 @@ export const EVOLUTIONS: readonly Evolution[] = Object.freeze([
   {
     id: "gusano-legendario",
     name: "Gusano Legendario",
-    minEaten: 4,
+    minExperience: 8,
     tickMs: 140,
     scale: 0.9,
     headColor: 0xffdd55,
@@ -193,7 +229,7 @@ export const EVOLUTIONS: readonly Evolution[] = Object.freeze([
   {
     id: "serpiente-influencer",
     name: "Serpiente Influencer",
-    minEaten: 9,
+    minExperience: 20,
     tickMs: 128,
     scale: 0.98,
     headColor: 0xff70bf,
@@ -204,7 +240,7 @@ export const EVOLUTIONS: readonly Evolution[] = Object.freeze([
   {
     id: "monstruo-meme",
     name: "Monstruo Meme",
-    minEaten: 16,
+    minExperience: 38,
     tickMs: 116,
     scale: 1.08,
     headColor: 0xff624d,
@@ -215,7 +251,7 @@ export const EVOLUTIONS: readonly Evolution[] = Object.freeze([
   {
     id: "dios-del-caos",
     name: "Dios del Caos",
-    minEaten: 25,
+    minExperience: 62,
     tickMs: 104,
     scale: 1.18,
     headColor: 0x5de8ff,
@@ -238,6 +274,7 @@ export interface GameState {
   readonly food: Food;
   readonly score: number;
   readonly eaten: number;
+  readonly experience: number;
   readonly growthPending: number;
   readonly evolutionId: EvolutionId;
   readonly activeEffects: readonly ActiveEffect[];
@@ -274,6 +311,7 @@ export type GameEvent =
       readonly multiplier: number;
       readonly points: number;
       readonly score: number;
+      readonly experience: number;
       readonly growth: number;
     }
   | {
@@ -335,6 +373,7 @@ export interface GameSnapshot {
   readonly food: Food;
   readonly score: number;
   readonly eaten: number;
+  readonly experience: number;
   readonly growthPending: number;
   readonly evolutionId: EvolutionId;
   readonly evolutionName: string;
@@ -409,16 +448,16 @@ function samePosition(a: Position, b: Position): boolean {
   return a.x === b.x && a.y === b.y;
 }
 
-function evolutionFor(eaten: number): Evolution {
+function evolutionFor(experience: number): Evolution {
   for (let index = EVOLUTIONS.length - 1; index >= 0; index -= 1) {
     const evolution = EVOLUTIONS[index];
-    if (evolution && eaten >= evolution.minEaten) return evolution;
+    if (evolution && experience >= evolution.minExperience) return evolution;
   }
   return EVOLUTIONS[0]!;
 }
 
-export function getEvolution(state: Pick<GameState, "eaten">): Evolution {
-  return evolutionFor(state.eaten);
+export function getEvolution(state: Pick<GameState, "experience">): Evolution {
+  return evolutionFor(state.experience);
 }
 
 function randomIndex(
@@ -514,6 +553,7 @@ export function createInitialState(
     food: spawned.food,
     score: 0,
     eaten: 0,
+    experience: 0,
     growthPending: 0,
     evolutionId: EVOLUTIONS[0]!.id,
     activeEffects: [],
@@ -651,10 +691,11 @@ export function step(inputState: GameState): StepResult {
   const awardedPoints = (definition?.points ?? 0) * multiplier;
   const score = state.score + awardedPoints;
   const eaten = state.eaten + (ate ? 1 : 0);
+  const experience = state.experience + (definition?.experience ?? 0);
   const pendingBeforeMovement = Math.max(0, state.growthPending - 1);
   const growthPending =
     pendingBeforeMovement + (definition ? definition.growth - 1 : 0);
-  const evolution = evolutionFor(eaten);
+  const evolution = evolutionFor(experience);
   let rngState = state.rngState;
   let food = state.food;
   let nextActiveEffects = activeEffects;
@@ -673,6 +714,7 @@ export function step(inputState: GameState): StepResult {
       multiplier,
       points: awardedPoints,
       score,
+      experience: definition.experience,
       growth: definition.growth,
     });
     if (definition.effect) {
@@ -721,6 +763,7 @@ export function step(inputState: GameState): StepResult {
       food,
       score,
       eaten,
+      experience,
       growthPending,
       evolutionId: evolution.id,
       activeEffects: nextActiveEffects,
@@ -740,7 +783,7 @@ export function getDifficultyLevel(
   );
 }
 
-type TickState = Pick<GameState, "eaten"> &
+type TickState = Pick<GameState, "experience"> &
   Partial<Pick<GameState, "elapsedMs" | "activeEffects">>;
 
 export function getTickMs(state: TickState): number {
@@ -748,7 +791,8 @@ export function getTickMs(state: TickState): number {
   const difficulty = getDifficultyLevel({ elapsedMs });
   const normalTickMs = Math.max(
     MIN_TICK_MS,
-    evolutionFor(state.eaten).tickMs - difficulty * TICK_REDUCTION_PER_LEVEL_MS,
+    evolutionFor(state.experience).tickMs -
+      difficulty * TICK_REDUCTION_PER_LEVEL_MS,
   );
   const hasSpeedBoost = (state.activeEffects ?? []).some(
     (effect) => effect.kind === "speed-boost" && effect.expiresAtMs > elapsedMs,
@@ -779,6 +823,7 @@ export function createSnapshot(state: GameState): GameSnapshot {
     },
     score: state.score,
     eaten: state.eaten,
+    experience: state.experience,
     growthPending: state.growthPending,
     evolutionId: evolution.id,
     evolutionName: evolution.name,

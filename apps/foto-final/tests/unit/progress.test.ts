@@ -128,20 +128,27 @@ describe("registro de una partida terminada", () => {
 
 describe("barra de evolución", () => {
   it.each([
-    [0, "mini-bicho", "gusano-legendario", 0, 4, 0],
-    [2, "mini-bicho", "gusano-legendario", 2, 4, 50],
-    [4, "gusano-legendario", "serpiente-influencer", 0, 5, 0],
-    [8, "gusano-legendario", "serpiente-influencer", 4, 5, 80],
-    [16, "monstruo-meme", "dios-del-caos", 0, 9, 0],
-    [24, "monstruo-meme", "dios-del-caos", 8, 9, 88],
+    [0, "mini-bicho", "gusano-legendario", 0, 8, 0],
+    [4, "mini-bicho", "gusano-legendario", 4, 8, 50],
+    [8, "gusano-legendario", "serpiente-influencer", 0, 12, 0],
+    [19, "gusano-legendario", "serpiente-influencer", 11, 12, 91],
+    [38, "monstruo-meme", "dios-del-caos", 0, 24, 0],
+    [61, "monstruo-meme", "dios-del-caos", 23, 24, 95],
   ] as const)(
-    "calcula el tramo para %i memes",
-    (eaten, current, next, eatenInLevel, eatenRequired, percent) => {
-      expect(getEvolutionProgress(eaten)).toMatchObject({
+    "calcula el tramo para %i XP",
+    (
+      experience,
+      current,
+      next,
+      experienceInLevel,
+      experienceRequired,
+      percent,
+    ) => {
+      expect(getEvolutionProgress(experience)).toMatchObject({
         current: { id: current },
         next: { id: next },
-        eatenInLevel,
-        eatenRequired,
+        experienceInLevel,
+        experienceRequired,
         percent,
         isMaxLevel: false,
       });
@@ -149,10 +156,10 @@ describe("barra de evolución", () => {
   );
 
   it("queda al 100 % al alcanzar la evolución máxima", () => {
-    expect(getEvolutionProgress(25)).toMatchObject({
+    expect(getEvolutionProgress(62)).toMatchObject({
       current: { id: "dios-del-caos" },
       next: null,
-      eatenRequired: 0,
+      experienceRequired: 0,
       percent: 100,
       isMaxLevel: true,
     });

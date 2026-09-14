@@ -9,10 +9,10 @@ El jugador controla a **Mini Bicho Meme**, recoge objetos de distintas rarezas, 
 - Portada con el logotipo **Meme Evolution Snake**.
 - Movimiento continuo con interpolación visual, cola de giros y aceleración progresiva.
 - Controles de teclado, gestos de deslizamiento y botones táctiles para móvil.
-- Diez comidas meme normales, raras o legendarias, dibujadas por código.
+- Diez comidas meme normales, raras o legendarias, con puntos, XP, probabilidad, escala y animación configurables.
 - Café Infinito activa turbo temporal y Energía Cringe duplica puntos; Patata Dorada y Super Meme ofrecen grandes recompensas.
 - Partículas, animaciones, vibración opcional y sonidos sintetizados propios para cada comida.
-- Crecimiento, puntuación, barra de evolución y cinco formas visuales durante la partida.
+- Crecimiento, puntuación, barra de XP y cinco formas visuales durante la partida.
 - Detección de derrota y reinicio sin recargar la página.
 - Récord, partidas, comida recogida, evolución máxima y mejor supervivencia guardados localmente.
 - Tres objetivos locales y texto de reto copiable sin integrar redes sociales.

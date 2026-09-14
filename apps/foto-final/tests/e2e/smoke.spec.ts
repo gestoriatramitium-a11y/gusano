@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { createInitialState } from "../../src/core/game";
+import { createInitialState, type FoodKind } from "../../src/core/game";
 
 function watchRuntime(page: Page) {
   const consoleErrors: string[] = [];
@@ -20,12 +20,12 @@ function watchRuntime(page: Page) {
   return { consoleErrors, pageErrors, externalRequests };
 }
 
-function findReachableCoffeeSeed(): number {
+function findReachableFoodSeed(kind: FoodKind): number {
   for (let seed = 1; seed < 50_000; seed += 1) {
     const state = createInitialState(seed);
     const head = state.snake[0]!;
     if (
-      state.food.kind === "infinite-coffee" &&
+      state.food.kind === kind &&
       state.food.position.y === head.y &&
       state.food.position.x > head.x &&
       state.food.position.x <= head.x + 5
@@ -33,7 +33,17 @@ function findReachableCoffeeSeed(): number {
       return seed;
     }
   }
-  throw new Error("No se encontró una semilla de prueba para Café infinito.");
+  throw new Error(`No se encontró una semilla de prueba para ${kind}.`);
+}
+
+async function turnUp(page: Page, isMobile: boolean): Promise<void> {
+  if (isMobile) {
+    const touchUp = page.getByRole("button", { name: "Mover arriba" });
+    await expect(touchUp).toBeVisible();
+    await touchUp.click();
+  } else {
+    await page.keyboard.press("ArrowUp");
+  }
 }
 
 test.beforeEach(async ({ page }) => {
@@ -77,13 +87,8 @@ test("completa, comparte y conserva una partida local", async ({
   await startButton.click();
   await expect(page.getByTestId("hud")).toBeVisible();
 
-  if (testInfo.project.name === "chromium-mobile") {
-    const touchUp = page.getByRole("button", { name: "Mover arriba" });
-    await expect(touchUp).toBeVisible();
-    await touchUp.click();
-  } else {
-    await page.keyboard.press("ArrowUp");
-  }
+  const isMobile = testInfo.project.name === "chromium-mobile";
+  await turnUp(page, isMobile);
 
   const gameOver = page.getByTestId("game-over");
   await expect(gameOver).toBeVisible({ timeout: 10_000 });
@@ -95,9 +100,13 @@ test("completa, comparte y conserva una partida local", async ({
 
   await page.getByTestId("restart-button").click();
   await expect(gameOver).toBeHidden();
+  await turnUp(page, isMobile);
+  await expect(gameOver).toBeVisible({ timeout: 10_000 });
+  await page.getByTestId("restart-button").click();
+  await expect(gameOver).toBeHidden();
   await page.reload();
   await expect(startScreen).toBeVisible();
-  await expect(page.getByTestId("stats-games")).toHaveText("1");
+  await expect(page.getByTestId("stats-games")).toHaveText("2");
 
   expect(runtime.consoleErrors).toEqual([]);
   expect(runtime.pageErrors).toEqual([]);
@@ -108,13 +117,37 @@ test("muestra feedback inmediato y activa el turbo de Café infinito", async ({
   page,
 }) => {
   const runtime = watchRuntime(page);
-  await page.goto(`/?seed=${findReachableCoffeeSeed()}`);
+  await page.goto(`/?seed=${findReachableFoodSeed("infinite-coffee")}`);
   await page.getByTestId("start-button").click();
 
   await expect(page.locator(".effect-chip--speed-boost")).toBeVisible({
     timeout: 5_000,
   });
   await expect(page.getByTestId("game-toast")).toContainText("CAFÉ INFINITO");
+  await expect(page.getByTestId("evolution-meter")).toHaveAttribute(
+    "aria-valuenow",
+    "50",
+  );
+
+  expect(runtime.consoleErrors).toEqual([]);
+  expect(runtime.pageErrors).toEqual([]);
+  expect([...runtime.externalRequests]).toEqual([]);
+});
+
+test("evoluciona visualmente al obtener suficiente experiencia", async ({
+  page,
+}) => {
+  const runtime = watchRuntime(page);
+  await page.goto(`/?seed=${findReachableFoodSeed("legendary-potato")}`);
+  await page.getByTestId("start-button").click();
+
+  await expect(page.getByTestId("evolution-celebration")).toContainText(
+    "Gusano Legendario",
+    { timeout: 5_000 },
+  );
+  await expect(page.locator(".hud__item--evolution .hud__value")).toHaveText(
+    "Gusano Legendario",
+  );
 
   expect(runtime.consoleErrors).toEqual([]);
   expect(runtime.pageErrors).toEqual([]);

@@ -223,7 +223,7 @@ export class MemeSnakeScene extends Phaser.Scene {
         this.createBurst(this.state.snake[0]!, definition.color, amount);
         this.createFloatingText(
           this.state.snake[0]!,
-          event.multiplier > 1 ? `+${event.points} · x2` : `+${event.points}`,
+          `${event.multiplier > 1 ? `+${event.points} · x2` : `+${event.points}`} · +${event.experience} XP`,
           event.rarity === "legendary" ? "#fff45f" : "#ffffff",
         );
         this.eatPulseUntil = time + 190;
@@ -330,16 +330,23 @@ export class MemeSnakeScene extends Phaser.Scene {
     const definition = FOOD_CATALOG[this.state.food.kind];
     const basePoint = this.toPixels(this.state.food.position, metrics);
     const phase = time * 0.006;
-    const rarityScale =
-      definition.rarity === "legendary"
-        ? 1.16
-        : definition.rarity === "rare"
-          ? 1.07
-          : 1;
-    const pulse = rarityScale * (1 + Math.sin(phase) * 0.075);
+    const pulseAmount =
+      definition.visualEffect === "pulse"
+        ? 0.1
+        : definition.visualEffect === "electric" ||
+            definition.visualEffect === "chaos"
+          ? 0.075
+          : 0.035;
+    const pulse = definition.visualScale * (1 + Math.sin(phase) * pulseAmount);
+    const bobAmount =
+      definition.visualEffect === "float" ||
+      definition.visualEffect === "electric" ||
+      definition.visualEffect === "chaos"
+        ? 3.2
+        : 1.2;
     const point = {
       x: basePoint.x,
-      y: basePoint.y + Math.sin(phase * 0.8) * 2.4,
+      y: basePoint.y + Math.sin(phase * 0.8) * bobAmount,
     };
 
     graphics.clear();
@@ -358,18 +365,41 @@ export class MemeSnakeScene extends Phaser.Scene {
       graphics.lineStyle(1, 0xffffff, 0.35);
       graphics.strokeCircle(point.x, point.y, metrics.cell * 0.69 * pulse);
     }
+    if (
+      definition.visualEffect === "electric" ||
+      definition.visualEffect === "chaos"
+    ) {
+      const sparks = definition.visualEffect === "chaos" ? 5 : 3;
+      graphics.fillStyle(definition.color, 0.9);
+      for (let index = 0; index < sparks; index += 1) {
+        const angle = phase * 0.7 + index * ((Math.PI * 2) / sparks);
+        graphics.fillCircle(
+          point.x + Math.cos(angle) * metrics.cell * 0.72 * pulse,
+          point.y + Math.sin(angle) * metrics.cell * 0.72 * pulse,
+          definition.visualEffect === "chaos" ? 2.8 : 2.2,
+        );
+      }
+    }
+    const rotation =
+      definition.visualEffect === "spin"
+        ? phase * 0.16
+        : definition.visualEffect === "chaos"
+          ? phase * 0.08 + Math.sin(phase * 1.7) * 0.2
+          : definition.rarity === "legendary"
+            ? Math.sin(phase * 0.7) * 0.12
+            : 0;
     glyph
       .setText(FOOD_GLYPHS[this.state.food.kind])
       .setColor(this.state.food.kind === "super-meme" ? "#fff45f" : "#ffffff")
       .setFontSize(Math.round(metrics.cell * 0.72))
       .setPosition(point.x, point.y + 1)
       .setScale(pulse)
-      .setRotation(
-        definition.rarity === "legendary" ? Math.sin(phase * 0.7) * 0.12 : 0,
-      );
+      .setRotation(rotation);
     const rarityLabel = RARITY_LABELS[definition.rarity];
     label
-      .setText(`${rarityLabel ? `${rarityLabel} · ` : ""}+${definition.points}`)
+      .setText(
+        `${rarityLabel ? `${rarityLabel} · ` : ""}+${definition.points} · +${definition.experience} XP`,
+      )
       .setPosition(point.x, point.y - metrics.cell * 0.62)
       .setColor(definition.rarity === "legendary" ? "#fff45f" : "#ffffff")
       .setVisible(metrics.cell >= 25);

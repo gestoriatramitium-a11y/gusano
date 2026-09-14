@@ -28,8 +28,8 @@ export type CompletedRun = Readonly<
 export interface EvolutionProgress {
   readonly current: Evolution;
   readonly next: Evolution | null;
-  readonly eatenInLevel: number;
-  readonly eatenRequired: number;
+  readonly experienceInLevel: number;
+  readonly experienceRequired: number;
   readonly percent: number;
   readonly isMaxLevel: boolean;
 }
@@ -173,12 +173,14 @@ export function recordCompletedRun(
   };
 }
 
-export function getEvolutionProgress(eatenValue: number): EvolutionProgress {
-  const eaten = safeNonNegativeInteger(eatenValue);
+export function getEvolutionProgress(
+  experienceValue: number,
+): EvolutionProgress {
+  const experience = safeNonNegativeInteger(experienceValue);
   let currentIndex = 0;
   for (let index = EVOLUTIONS.length - 1; index >= 0; index -= 1) {
     const candidate = EVOLUTIONS[index];
-    if (candidate && eaten >= candidate.minEaten) {
+    if (candidate && experience >= candidate.minExperience) {
       currentIndex = index;
       break;
     }
@@ -190,24 +192,24 @@ export function getEvolutionProgress(eatenValue: number): EvolutionProgress {
     return {
       current,
       next: null,
-      eatenInLevel: Math.max(0, eaten - current.minEaten),
-      eatenRequired: 0,
+      experienceInLevel: Math.max(0, experience - current.minExperience),
+      experienceRequired: 0,
       percent: 100,
       isMaxLevel: true,
     };
   }
 
-  const eatenRequired = next.minEaten - current.minEaten;
-  const eatenInLevel = Math.min(
-    eatenRequired,
-    Math.max(0, eaten - current.minEaten),
+  const experienceRequired = next.minExperience - current.minExperience;
+  const experienceInLevel = Math.min(
+    experienceRequired,
+    Math.max(0, experience - current.minExperience),
   );
   return {
     current,
     next,
-    eatenInLevel,
-    eatenRequired,
-    percent: Math.floor((eatenInLevel / eatenRequired) * 100),
+    experienceInLevel,
+    experienceRequired,
+    percent: Math.floor((experienceInLevel / experienceRequired) * 100),
     isMaxLevel: false,
   };
 }

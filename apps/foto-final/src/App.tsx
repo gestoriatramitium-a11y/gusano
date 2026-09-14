@@ -168,7 +168,7 @@ export function App() {
             ? `¡${food.name.toUpperCase()}! Esto no debería existir.`
             : EAT_MESSAGES[event.tick % EAT_MESSAGES.length];
         announce(
-          `${baseMessage} +${event.points}${event.multiplier > 1 ? " x2" : ""}`,
+          `${baseMessage} +${event.points}${event.multiplier > 1 ? " x2" : ""} · +${event.experience} XP`,
         );
         navigator.vibrate?.(event.rarity === "legendary" ? [55, 25, 90] : 35);
       } else if (event.type === "effect-started") {
@@ -254,7 +254,7 @@ export function App() {
   const score = snapshot?.score ?? 0;
   const currentEvolution = snapshot?.evolutionName ?? "Mini Bicho Meme";
   const elapsedMs = snapshot?.elapsedMs ?? 0;
-  const evolutionProgress = getEvolutionProgress(snapshot?.eaten ?? 0);
+  const evolutionProgress = getEvolutionProgress(snapshot?.experience ?? 0);
   const objectives = useMemo(() => getProgressObjectives(progress), [progress]);
 
   return (
@@ -324,7 +324,7 @@ export function App() {
               <span>{evolutionProgress.current.name}</span>
               <strong>
                 {evolutionProgress.next
-                  ? `${evolutionProgress.percent}% · siguiente: ${evolutionProgress.next.name}`
+                  ? `${evolutionProgress.percent}% · ${evolutionProgress.experienceInLevel}/${evolutionProgress.experienceRequired} XP → ${evolutionProgress.next.name}`
                   : "Poder máximo desbloqueado"}
               </strong>
             </div>
@@ -370,7 +370,11 @@ export function App() {
             )}
 
             {celebration && (
-              <div className="evolution-celebration" aria-live="assertive">
+              <div
+                className="evolution-celebration"
+                aria-live="assertive"
+                data-testid="evolution-celebration"
+              >
                 <span>¡Evolución!</span>
                 <strong>{celebration}</strong>
               </div>
