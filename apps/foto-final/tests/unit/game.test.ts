@@ -5,10 +5,12 @@ import {
   FOOD_KINDS,
   createInitialState,
   createSnapshot,
+  getDifficultyLevel,
   getEvolution,
   getTickMs,
   queueDirection,
   restart,
+  selectFoodKind,
   start,
   step,
   type FoodKind,
@@ -25,9 +27,9 @@ function foodAhead(state: GameState, kind: FoodKind): GameState {
 }
 
 describe("catálogos de Meme Evolution Snake", () => {
-  it("define los ocho objetos meme y las cinco evoluciones", () => {
-    expect(FOOD_KINDS).toHaveLength(8);
-    expect(Object.keys(FOOD_CATALOG)).toHaveLength(8);
+  it("define los diez objetos meme y las cinco evoluciones", () => {
+    expect(FOOD_KINDS).toHaveLength(10);
+    expect(Object.keys(FOOD_CATALOG)).toHaveLength(10);
     expect(EVOLUTIONS.map((evolution) => evolution.name)).toEqual([
       "Mini Bicho Meme",
       "Gusano Legendario",
@@ -35,6 +37,48 @@ describe("catálogos de Meme Evolution Snake", () => {
       "Monstruo Meme",
       "Dios del Caos",
     ]);
+  });
+
+  it("clasifica la comida y configura los cuatro objetos especiales", () => {
+    expect(FOOD_CATALOG["infinite-coffee"]).toMatchObject({
+      name: "Café infinito",
+      rarity: "rare",
+      effect: { kind: "speed-boost", durationMs: 6_000 },
+    });
+    expect(FOOD_CATALOG["cringe-energy"]).toMatchObject({
+      name: "Energía cringe",
+      rarity: "rare",
+      effect: { kind: "double-points", durationMs: 7_000 },
+    });
+    expect(FOOD_CATALOG["legendary-potato"]).toMatchObject({
+      name: "Patata dorada",
+      rarity: "legendary",
+      growth: 4,
+    });
+    expect(FOOD_CATALOG["super-meme"]).toMatchObject({
+      rarity: "legendary",
+      growth: 6,
+      points: 300,
+    });
+    expect(FOOD_KINDS.every((kind) => FOOD_CATALOG[kind].weight > 0)).toBe(
+      true,
+    );
+  });
+
+  it("selecciona cada objeto dentro de su intervalo ponderado", () => {
+    const totalWeight = FOOD_KINDS.reduce(
+      (total, kind) => total + FOOD_CATALOG[kind].weight,
+      0,
+    );
+    let accumulatedWeight = 0;
+
+    for (const kind of FOOD_KINDS) {
+      const midpoint =
+        (accumulatedWeight + FOOD_CATALOG[kind].weight / 2) / totalWeight;
+      expect(selectFoodKind(midpoint)).toBe(kind);
+      accumulatedWeight += FOOD_CATALOG[kind].weight;
+    }
+    expect(() => selectFoodKind(1)).toThrow(RangeError);
   });
 
   it("mantiene umbrales y velocidades ordenados", () => {
@@ -107,6 +151,33 @@ describe("movimiento y controles", () => {
       direction: "up",
     });
   });
+
+  it("conserva hasta dos giros rápidos y los consume en orden", () => {
+    const initial = createInitialState(8);
+    const up = queueDirection(initial, "up");
+    const left = queueDirection(up, "left");
+    const ignoredThird = queueDirection(left, "down");
+
+    expect(left.directionQueue).toEqual(["up", "left"]);
+    expect(left.queuedDirection).toBe("up");
+    expect(ignoredThird).toBe(left);
+
+    const first = step(left).state;
+    expect(first.direction).toBe("up");
+    expect(first.directionQueue).toEqual(["left"]);
+    expect(first.queuedDirection).toBe("left");
+
+    const second = step(first).state;
+    expect(second.direction).toBe("left");
+    expect(second.directionQueue).toEqual([]);
+  });
+
+  it("rechaza un giro opuesto respecto a la última entrada en cola", () => {
+    const initial = createInitialState(9);
+    const up = queueDirection(initial, "up");
+
+    expect(queueDirection(up, "down")).toBe(up);
+  });
 });
 
 describe("comida, crecimiento y evolución", () => {
@@ -131,15 +202,82 @@ describe("comida, crecimiento y evolución", () => {
     );
   });
 
-  it("aplica el crecimiento doble de Energía cringe durante dos ticks", () => {
-    const initial = foodAhead(createInitialState(15), "cringe-energy");
+  it("aplica todo el crecimiento de una comida legendaria en varios ticks", () => {
+    const initial = foodAhead(createInitialState(15), "legendary-potato");
     const first = step(initial).state;
     const second = step(first).state;
 
-    expect(first.growthPending).toBe(1);
+    expect(first.growthPending).toBe(3);
     expect(first.snake).toHaveLength(initial.snake.length + 1);
-    expect(second.growthPending).toBe(0);
+    expect(second.growthPending).toBe(2);
     expect(second.snake).toHaveLength(initial.snake.length + 2);
+  });
+
+  it("activa Energía cringe y duplica solo las comidas posteriores", () => {
+    const initial = foodAhead(createInitialState(16), "cringe-energy");
+    const first = step(initial);
+    const firstEffect = first.state.activeEffects[0];
+
+    expect(first.state.score).toBe(25);
+    expect(firstEffect).toEqual({
+      kind: "double-points",
+      expiresAtMs: first.state.elapsedMs + 7_000,
+    });
+    expect(first.events).toContainEqual({
+      type: "effect-started",
+      tick: 1,
+      effect: "double-points",
+      expiresAtMs: firstEffect?.expiresAtMs,
+      refreshed: false,
+    });
+
+    const second = step(foodAhead(first.state, "flying-pizza"));
+    expect(second.state.score).toBe(55);
+    expect(second.events).toContainEqual(
+      expect.objectContaining({
+        type: "ate",
+        kind: "flying-pizza",
+        basePoints: 15,
+        multiplier: 2,
+        points: 30,
+      }),
+    );
+  });
+
+  it("refresca un efecto repetido sin apilar multiplicadores", () => {
+    const first = step(
+      foodAhead(createInitialState(17), "cringe-energy"),
+    ).state;
+    const previousExpiry = first.activeEffects[0]?.expiresAtMs ?? 0;
+    const second = step(foodAhead(first, "cringe-energy"));
+
+    expect(second.state.activeEffects).toHaveLength(1);
+    expect(second.state.activeEffects[0]?.expiresAtMs).toBeGreaterThan(
+      previousExpiry,
+    );
+    expect(second.events).toContainEqual(
+      expect.objectContaining({
+        type: "effect-started",
+        effect: "double-points",
+        refreshed: true,
+      }),
+    );
+  });
+
+  it("elimina y anuncia los efectos al alcanzar su vencimiento", () => {
+    const initial: GameState = {
+      ...createInitialState(18),
+      status: "playing",
+      activeEffects: [{ kind: "double-points", expiresAtMs: 1 }],
+    };
+    const result = step(initial);
+
+    expect(result.state.activeEffects).toEqual([]);
+    expect(result.events).toContainEqual({
+      type: "effect-expired",
+      tick: 1,
+      effect: "double-points",
+    });
   });
 
   it.each([
@@ -175,6 +313,46 @@ describe("comida, crecimiento y evolución", () => {
       from: "mini-bicho",
       to: "gusano-legendario",
     });
+  });
+});
+
+describe("dificultad y velocidad temporal", () => {
+  it("acelera progresivamente cada quince segundos y limita la dificultad", () => {
+    const initial = createInitialState(22);
+
+    expect(getDifficultyLevel(initial)).toBe(0);
+    expect(getTickMs(initial)).toBe(150);
+    expect(getTickMs({ ...initial, elapsedMs: 15_000 })).toBe(147);
+    expect(getDifficultyLevel({ ...initial, elapsedMs: 999_999 })).toBe(12);
+    expect(getTickMs({ ...initial, elapsedMs: 999_999, eaten: 25 })).toBe(78);
+  });
+
+  it("Café infinito aplica turbo temporal con un límite seguro", () => {
+    const initial = foodAhead(createInitialState(23), "infinite-coffee");
+    const collected = step(initial);
+    const speedEffect = collected.state.activeEffects.find(
+      (effect) => effect.kind === "speed-boost",
+    );
+
+    expect(speedEffect).toEqual({
+      kind: "speed-boost",
+      expiresAtMs: collected.state.elapsedMs + 6_000,
+    });
+    expect(getTickMs(collected.state)).toBe(113);
+    expect(
+      getTickMs({
+        ...collected.state,
+        eaten: 25,
+        elapsedMs: 999_999,
+        activeEffects: [{ kind: "speed-boost", expiresAtMs: 1_000_000 }],
+      }),
+    ).toBeGreaterThanOrEqual(58);
+    expect(
+      getTickMs({
+        ...collected.state,
+        elapsedMs: speedEffect?.expiresAtMs ?? 0,
+      }),
+    ).toBeGreaterThan(113);
   });
 });
 
@@ -270,13 +448,24 @@ describe("colisiones, derrota y reinicio", () => {
 
 describe("snapshots", () => {
   it("crea una copia serializable sin compartir posiciones mutables", () => {
-    const state = createInitialState(55);
+    const state: GameState = {
+      ...queueDirection(createInitialState(55), "up"),
+      activeEffects: [{ kind: "double-points", expiresAtMs: 7_000 }],
+      elapsedMs: 15_000,
+    };
     const snapshot = createSnapshot(state);
 
     expect(JSON.parse(JSON.stringify(snapshot))).toEqual(snapshot);
     expect(snapshot.snake).not.toBe(state.snake);
     expect(snapshot.snake[0]).not.toBe(state.snake[0]);
     expect(snapshot.food.position).not.toBe(state.food.position);
+    expect(snapshot.directionQueue).toEqual(["up"]);
+    expect(snapshot.directionQueue).not.toBe(state.directionQueue);
+    expect(snapshot.activeEffects).toEqual(state.activeEffects);
+    expect(snapshot.activeEffects).not.toBe(state.activeEffects);
+    expect(snapshot.activeEffects[0]).not.toBe(state.activeEffects[0]);
+    expect(snapshot.difficultyLevel).toBe(1);
+    expect(snapshot.tickMs).toBe(147);
     expect(snapshot.evolutionName).toBe("Mini Bicho Meme");
   });
 });

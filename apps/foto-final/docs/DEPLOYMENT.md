@@ -9,9 +9,11 @@ Ejecuta desde la raíz del repositorio:
 ```bash
 cd apps/foto-final
 npm ci
+npm run test:coverage
 npm run check
-npm run test:e2e
 ```
+
+La prueba E2E sirve el `dist` ya compilado mediante `vite preview`; por ello debe ejecutarse después de `npm run build` o como parte de `npm run check`.
 
 Si las comprobaciones terminan correctamente, verifica que el build contiene el documento y sus assets:
 
@@ -39,7 +41,7 @@ El trabajo se realiza en la rama `codex/foto-final-mvp` sin reescribir el histor
 3. Comprueba el diff y crea un commit descriptivo.
 4. Publica la rama en el remoto configurado y abre una Pull Request hacia `main`.
 
-El workflow `.github/workflows/ci.yml` instala con `npm ci` y ejecuta formato, lint, tipos, pruebas unitarias, build y Playwright. Solo una ejecución real en GitHub permite afirmar que CI está aprobada.
+El workflow `.github/workflows/ci.yml` instala con `npm ci`, ejecuta formato, lint, tipos, pruebas unitarias con umbral de cobertura, build y Playwright, y verifica que `dist/index.html` y los assets existen. Solo una ejecución real en GitHub permite afirmar que CI está aprobada.
 
 ## Netlify mediante Git
 
@@ -49,11 +51,12 @@ El workflow `.github/workflows/ci.yml` instala con `npm ci` y ejecuta formato, l
    - Base directory: `apps/foto-final`
    - Build command: `npm run build`
    - Publish directory: `dist`
+   - Node.js: `22.17.0`
 4. Despliega una rama o Pull Request y abre la URL generada.
 5. Comprueba portada, teclado, controles táctiles, puntuación, derrota y reinicio en la URL publicada.
 6. Revisa consola y red para confirmar que no hay errores ni recursos externos inesperados.
 
-La redirección SPA devuelve `index.html` para rutas desconocidas. El despliegue no incluye las funciones Netlify antiguas que puedan existir fuera de `apps/foto-final`.
+La redirección SPA devuelve `index.html` para rutas desconocidas. Netlify revalida ese documento en cada visita y conserva los assets con nombre versionado en caché inmutable durante un año. El despliegue no incluye las funciones Netlify antiguas que puedan existir fuera de `apps/foto-final`.
 
 ## Despliegue manual opcional
 

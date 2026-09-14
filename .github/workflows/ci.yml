@@ -26,6 +26,11 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run test
+      - run: npm run test:coverage
       - run: npm run build
+      - name: Verify build artifact
+        run: |
+          test -f dist/index.html
+          find dist/assets -type f -print -quit | grep -q .
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e

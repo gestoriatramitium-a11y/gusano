@@ -2,16 +2,20 @@
 
 MVP HTML5 para un jugador que combina el movimiento clásico de *Snake* con una criatura meme que crece y cambia de aspecto durante la partida. Todo se ejecuta en el navegador: no hay backend, base de datos, cuentas, multijugador ni recursos gráficos externos.
 
-El jugador controla a **Mini Bicho Meme**, recoge objetos meme, aumenta su puntuación y longitud y desbloquea evoluciones visuales. La ronda termina al chocar; la pantalla de derrota muestra el resultado y permite volver a jugar de inmediato.
+El jugador controla a **Mini Bicho Meme**, recoge objetos de distintas rarezas, aumenta su puntuación y longitud y atraviesa cinco evoluciones visuales. La ronda acelera progresivamente y termina al chocar; la pantalla de derrota resume el resultado, crea un reto de texto para copiar y permite volver a jugar de inmediato.
 
 ## Incluido en el MVP
 
 - Portada con el logotipo **Meme Evolution Snake**.
-- Movimiento continuo en una cuadrícula al estilo *Snake*.
-- Controles de teclado y una interfaz táctil para móvil.
-- Objetos meme dibujados por código.
-- Crecimiento, puntuación y evoluciones visuales durante la partida.
+- Movimiento continuo con interpolación visual, cola de giros y aceleración progresiva.
+- Controles de teclado, gestos de deslizamiento y botones táctiles para móvil.
+- Diez comidas meme normales, raras o legendarias, dibujadas por código.
+- Café Infinito activa turbo temporal y Energía Cringe duplica puntos; Patata Dorada y Super Meme ofrecen grandes recompensas.
+- Partículas, animaciones, vibración opcional y sonidos sintetizados propios para cada comida.
+- Crecimiento, puntuación, barra de evolución y cinco formas visuales durante la partida.
 - Detección de derrota y reinicio sin recargar la página.
+- Récord, partidas, comida recogida, evolución máxima y mejor supervivencia guardados localmente.
+- Tres objetivos locales y texto de reto copiable sin integrar redes sociales.
 - Diseño responsive para móvil y escritorio.
 - Lógica del juego separada de Phaser y de la interfaz.
 - Aplicación estática preparada para GitHub, CI y Netlify.
@@ -53,6 +57,7 @@ npm run format:check # comprobación de formato
 npm run lint         # análisis estático
 npm run typecheck    # comprobación de TypeScript
 npm run test         # pruebas unitarias
+npm run test:coverage # pruebas y umbrales de cobertura
 npm run test:e2e     # pruebas de navegador
 npm run check        # puerta de calidad agregada
 ```
@@ -64,6 +69,7 @@ Los resultados de estas comprobaciones deben comunicarse únicamente después de
 ```text
 apps/foto-final/
 ├── src/core/         # estado y reglas deterministas, sin Phaser
+├── src/audio/        # efectos sintetizados con Web Audio
 ├── src/game/         # escena y representación Phaser
 ├── src/components/   # integración React y controles
 ├── tests/unit/       # pruebas de la lógica pura
@@ -84,4 +90,4 @@ El `netlify.toml` de la raíz configura `apps/foto-final` como directorio base, 
 
 ## Privacidad y alcance
 
-El MVP no almacena secretos, credenciales, datos personales ni identificadores persistentes. No incorpora publicidad real, campañas, tienda, autenticación, funciones sociales ni servicios de servidor.
+El MVP no almacena secretos, credenciales, datos personales ni identificadores de usuario. Solo conserva estadísticas de juego en `localStorage` del dispositivo. No incorpora publicidad real, campañas, tienda, autenticación, publicación en redes sociales ni servicios de servidor.

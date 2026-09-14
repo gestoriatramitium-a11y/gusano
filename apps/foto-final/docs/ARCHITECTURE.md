@@ -8,25 +8,28 @@ La aplicación es un juego HTML5 estático y autónomo. React gestiona la interf
 
 ### Lógica determinista
 
-`src/core/game.ts` contiene los tipos y transiciones del juego: cuadrícula, serpiente, dirección, aparición de objetos, crecimiento, puntuación, evolución y derrota. La siguiente situación depende únicamente del estado anterior y de una entrada explícita. La semilla forma parte del estado para que la colocación de objetos pueda reproducirse en pruebas.
+`src/core/game.ts` contiene los tipos y transiciones del juego: cuadrícula, serpiente, cola de direcciones, aparición ponderada de rarezas, crecimiento, efectos temporizados, dificultad, puntuación, evolución y derrota. La siguiente situación depende únicamente del estado anterior y de una entrada explícita. La semilla y el tiempo transcurrido forman parte del estado para que la colocación de objetos, los efectos y la aceleración puedan reproducirse en pruebas.
 
 Esta capa no importa React, Phaser, APIs del DOM ni almacenamiento del navegador.
+
+`src/core/progress.ts` contiene el esquema versionado y las operaciones puras para acumular récord, partidas, comida, evolución máxima, supervivencia, objetivos y texto compartible. La capa React es la única que lee o escribe este estado en `localStorage` y migra el récord del MVP anterior.
 
 ### Escena Phaser
 
 `src/game/MemeSnakeScene.ts` adapta la lógica pura al bucle visual. Sus responsabilidades son:
 
 - traducir teclado, gestos o controles de la interfaz a direcciones válidas;
-- avanzar el estado a intervalos controlados;
-- dibujar el tablero, Mini Bicho Meme, su cuerpo y los objetos con primitivas Canvas;
-- reflejar crecimiento, evolución y derrota;
+- avanzar el estado al intervalo que decide el núcleo;
+- interpolar posiciones entre pulsos para suavizar el movimiento sin alterar la cuadrícula lógica;
+- dibujar el tablero, las cinco evoluciones y las diez comidas con primitivas Canvas;
+- reflejar crecimiento, rarezas, partículas, efectos activos, evolución y derrota;
 - publicar hacia React los cambios necesarios para la interfaz.
 
 La escena no debe duplicar las reglas del núcleo. Un cambio visual no puede alterar por sí solo la puntuación, las colisiones o la semilla.
 
 ### Integración React
 
-`src/components/GameCanvas.tsx` crea el contenedor de Phaser, instancia una única partida y destruye la instancia al desmontarse. `src/App.tsx` compone portada, marcador, ayuda y estados de inicio o derrota. `src/styles.css` resuelve layout, controles táctiles, áreas seguras, estados de foco y adaptación a móvil.
+`src/components/GameCanvas.tsx` crea el contenedor de Phaser, instancia una única partida y destruye la instancia al desmontarse. `src/App.tsx` compone portada, marcador, barra de evolución, efectos activos, estadísticas, objetivos y estados de inicio o derrota. `src/audio/SynthAudio.ts` genera respuestas sonoras cortas mediante Web Audio sin archivos externos. `src/styles.css` resuelve transiciones, layout, controles táctiles, áreas seguras, estados de foco y adaptación a móvil.
 
 React y Phaser se comunican mediante una interfaz pequeña de eventos y comandos; React no modifica directamente objetos internos de la escena.
 
@@ -34,9 +37,9 @@ React y Phaser se comunican mediante una interfaz pequeña de eventos y comandos
 
 1. La portada presenta el nombre, Mini Bicho Meme y la acción de comenzar.
 2. Al iniciar se crea un estado determinista y se monta la escena.
-3. Cada entrada solicita un cambio de dirección; el núcleo rechaza el giro opuesto inmediato.
-4. Cada pulso avanza una celda y evalúa comida, crecimiento, evolución y colisiones.
-5. React actualiza el marcador con los eventos de la escena.
+3. Cada entrada solicita un cambio de dirección; una cola corta conserva giros rápidos y el núcleo rechaza inversiones imposibles.
+4. Cada pulso avanza una celda y evalúa comida, multiplicadores, efectos, dificultad, crecimiento, evolución y colisiones.
+5. Phaser interpola el resultado y emite feedback visual; React actualiza marcador, anuncios y efectos sonoros.
 6. Una colisión lleva al estado de derrota y detiene el avance.
 7. Volver a jugar crea un estado inicial nuevo sin recargar la aplicación.
 
@@ -48,6 +51,6 @@ No se cargan assets remotos. Personajes, objetos, logotipo y efectos se construy
 
 ## Calidad y límites
 
-`tests/unit/game.test.ts` cubre las reglas puras y los casos límite. `tests/e2e/smoke.spec.ts` cubre el recorrido visible en un navegador real, incluidos inicio, control, puntuación o crecimiento, derrota y reinicio según los puntos de prueba disponibles.
+`tests/unit/game.test.ts` cubre las reglas de partida y `tests/unit/progress.test.ts` cubre persistencia defensiva, evolución, objetivos y texto compartible. La cobertura instrumentada se limita a `src/core/**/*.ts` y exige al menos un 90 % en ramas, funciones, líneas y sentencias. `tests/e2e/smoke.spec.ts` cubre el recorrido visible en navegadores de escritorio y móvil contra la vista previa del `dist` de producción: portada, acción principal visible, controles, derrota, reto copiable, reinicio, persistencia y Café Infinito.
 
-La compilación es una SPA estática. No existen endpoints, funciones de servidor, cuentas, telemetría remota, base de datos ni sincronización multijugador. Cualquier estado temporal pertenece exclusivamente a la sesión del navegador.
+La compilación es una SPA estática. No existen endpoints, funciones de servidor, cuentas, telemetría remota, base de datos ni sincronización multijugador. Las estadísticas no personales permanecen solo en el `localStorage` del navegador y se pueden eliminar borrando los datos locales del sitio.

@@ -12,6 +12,7 @@ import {
   step,
   type Direction,
   type FoodKind,
+  type FoodRarity,
   type GameEvent,
   type GameSnapshot,
   type GameState,
@@ -23,6 +24,12 @@ interface SceneCallbacks {
   onSnapshot(snapshot: GameSnapshot): void;
 }
 
+interface BoardMetrics {
+  readonly cell: number;
+  readonly offsetX: number;
+  readonly offsetY: number;
+}
+
 const FOOD_GLYPHS: Readonly<Record<FoodKind, string>> = {
   "legendary-potato": "🥔",
   "flying-pizza": "🍕",
@@ -32,6 +39,14 @@ const FOOD_GLYPHS: Readonly<Record<FoodKind, string>> = {
   "duck-king": "👑",
   "cringe-energy": "⚡",
   "influencer-avocado": "🥑",
+  "infinite-coffee": "☕",
+  "super-meme": "★",
+};
+
+const RARITY_LABELS: Readonly<Record<FoodRarity, string>> = {
+  normal: "",
+  rare: "RARA",
+  legendary: "LEGENDARIA",
 };
 
 const KEY_TO_DIRECTION: Readonly<Record<string, Direction>> = {
@@ -52,9 +67,14 @@ const DIRECTION_VECTOR: Readonly<Record<Direction, Position>> = {
   right: { x: 1, y: 0 },
 };
 
+function interpolate(from: number, to: number, amount: number): number {
+  return from + (to - from) * amount;
+}
+
 export class MemeSnakeScene extends Phaser.Scene {
   private readonly callbacks: SceneCallbacks;
   private state: GameState = createInitialState();
+  private previousSnake: readonly Position[] = this.state.snake;
   private boardGraphics?: Phaser.GameObjects.Graphics;
   private snakeGraphics?: Phaser.GameObjects.Graphics;
   private foodGraphics?: Phaser.GameObjects.Graphics;
@@ -62,6 +82,8 @@ export class MemeSnakeScene extends Phaser.Scene {
   private foodLabel?: Phaser.GameObjects.Text;
   private accumulatorMs = 0;
   private pointerStart: Position | null = null;
+  private pausedUntil = 0;
+  private eatPulseUntil = 0;
 
   constructor(callbacks: SceneCallbacks) {
     super({ key: "meme-snake" });
@@ -76,6 +98,7 @@ export class MemeSnakeScene extends Phaser.Scene {
       .text(0, 0, "", {
         fontFamily: "system-ui, sans-serif",
         fontSize: "24px",
+        fontStyle: "bold",
       })
       .setOrigin(0.5);
     this.foodLabel = this.add
@@ -91,9 +114,7 @@ export class MemeSnakeScene extends Phaser.Scene {
 
     this.input.keyboard?.on("keydown", (event: KeyboardEvent) => {
       const direction = KEY_TO_DIRECTION[event.code];
-      if (!direction) {
-        return;
-      }
+      if (!direction) return;
       event.preventDefault();
       this.changeDirection(direction);
     });
@@ -102,16 +123,12 @@ export class MemeSnakeScene extends Phaser.Scene {
       this.pointerStart = { x: pointer.x, y: pointer.y };
     });
     this.input.on("pointerup", (pointer: Phaser.Input.Pointer) => {
-      if (!this.pointerStart) {
-        return;
-      }
+      if (!this.pointerStart) return;
       const deltaX = pointer.x - this.pointerStart.x;
       const deltaY = pointer.y - this.pointerStart.y;
       this.pointerStart = null;
 
-      if (Math.max(Math.abs(deltaX), Math.abs(deltaY)) < 24) {
-        return;
-      }
+      if (Math.max(Math.abs(deltaX), Math.abs(deltaY)) < 24) return;
       this.changeDirection(
         Math.abs(deltaX) > Math.abs(deltaY)
           ? deltaX > 0
@@ -123,22 +140,34 @@ export class MemeSnakeScene extends Phaser.Scene {
       );
     });
 
-    this.renderState();
+    this.renderBoard();
+    this.renderDynamic(1, 0);
     this.emitSnapshot();
   }
 
-  update(_time: number, delta: number): void {
+  update(time: number, delta: number): void {
     if (this.state.status !== "playing") {
+      this.renderDynamic(1, time);
+      return;
+    }
+
+    if (time < this.pausedUntil) {
+      this.renderDynamic(1, time);
       return;
     }
 
     this.accumulatorMs += Math.min(delta, 250);
+    let committedSteps = 0;
     let safety = 0;
     while (this.accumulatorMs >= getTickMs(this.state) && safety < 4) {
       this.accumulatorMs -= getTickMs(this.state);
+      this.previousSnake = this.state.snake.map((position) => ({
+        ...position,
+      }));
       const result = step(this.state);
       this.state = result.state;
-      this.handleEvents(result.events);
+      this.handleEvents(result.events, time);
+      committedSteps += 1;
       safety += 1;
       if (this.state.status === "game-over") {
         this.accumulatorMs = 0;
@@ -146,27 +175,37 @@ export class MemeSnakeScene extends Phaser.Scene {
       }
     }
 
-    if (safety > 0) {
-      this.renderState();
-      this.emitSnapshot();
-    }
+    const movementProgress =
+      this.state.status === "playing"
+        ? Phaser.Math.Clamp(this.accumulatorMs / getTickMs(this.state), 0, 1)
+        : 1;
+    this.renderDynamic(movementProgress, time);
+    if (committedSteps > 0) this.emitSnapshot();
   }
 
   startRun(): void {
-    const seed = (Date.now() ^ Math.floor(Math.random() * 0xffff_ffff)) >>> 0;
-    const initial = createInitialState(seed || 1);
-    const result = start(initial);
+    const querySeed = Number(
+      new URLSearchParams(window.location.search).get("seed"),
+    );
+    const generatedSeed =
+      (Date.now() ^ Math.floor(Math.random() * 0xffff_ffff)) >>> 0;
+    const seed =
+      Number.isSafeInteger(querySeed) && querySeed > 0
+        ? querySeed
+        : generatedSeed || 1;
+    const result = start(createInitialState(seed));
     this.state = result.state;
-    this.accumulatorMs = 0;
-    this.handleEvents(result.events);
-    this.renderState();
+    this.previousSnake = this.state.snake.map((position) => ({ ...position }));
+    this.accumulatorMs = getTickMs(this.state);
+    this.pausedUntil = 0;
+    this.eatPulseUntil = 0;
+    this.handleEvents(result.events, this.time.now);
+    this.renderDynamic(1, this.time.now);
     this.emitSnapshot();
   }
 
   changeDirection(direction: Direction): void {
-    if (this.state.status !== "playing") {
-      return;
-    }
+    if (this.state.status !== "playing") return;
     const next = queueDirection(this.state, direction);
     if (next !== this.state) {
       this.state = next;
@@ -174,20 +213,35 @@ export class MemeSnakeScene extends Phaser.Scene {
     }
   }
 
-  private handleEvents(events: readonly GameEvent[]): void {
+  private handleEvents(events: readonly GameEvent[], time: number): void {
     for (const event of events) {
       this.callbacks.onEvent(event);
       if (event.type === "ate") {
-        this.createBurst(this.state.snake[0]!, FOOD_CATALOG[event.kind].color);
-        this.cameras.main.shake(70, 0.0022);
+        const definition = FOOD_CATALOG[event.kind];
+        const amount =
+          event.rarity === "legendary" ? 24 : event.rarity === "rare" ? 15 : 9;
+        this.createBurst(this.state.snake[0]!, definition.color, amount);
+        this.createFloatingText(
+          this.state.snake[0]!,
+          event.multiplier > 1 ? `+${event.points} · x2` : `+${event.points}`,
+          event.rarity === "legendary" ? "#fff45f" : "#ffffff",
+        );
+        this.eatPulseUntil = time + 190;
+        this.cameras.main.shake(
+          event.rarity === "legendary" ? 150 : 70,
+          0.0028,
+        );
+        if (event.rarity === "legendary") {
+          this.cameras.main.flash(220, 255, 216, 61, false);
+        }
       } else if (event.type === "evolved") {
         const evolution = EVOLUTIONS.find(
           (candidate) => candidate.id === event.to,
         );
-        this.cameras.main.flash(260, 188, 255, 44, false);
-        if (evolution) {
-          this.createBurst(this.state.snake[0]!, evolution.accentColor, 16);
-        }
+        this.pausedUntil = time + 620;
+        this.cameras.main.flash(330, 188, 255, 44, false);
+        if (evolution)
+          this.createBurst(this.state.snake[0]!, evolution.accentColor, 22);
       } else if (event.type === "game-over") {
         this.cameras.main.shake(340, 0.012);
         this.cameras.main.flash(180, 255, 59, 167, false);
@@ -199,7 +253,7 @@ export class MemeSnakeScene extends Phaser.Scene {
     this.callbacks.onSnapshot(createSnapshot(this.state));
   }
 
-  private metrics(): { cell: number; offsetX: number; offsetY: number } {
+  private metrics(): BoardMetrics {
     const cell = Math.min(32, 820 / this.state.width, 520 / this.state.height);
     return {
       cell,
@@ -208,25 +262,15 @@ export class MemeSnakeScene extends Phaser.Scene {
     };
   }
 
-  private toPixels(position: Position): Position {
-    const { cell, offsetX, offsetY } = this.metrics();
+  private toPixels(position: Position, metrics: BoardMetrics): Position {
     return {
-      x: offsetX + position.x * cell + cell / 2,
-      y: offsetY + position.y * cell + cell / 2,
+      x: metrics.offsetX + position.x * metrics.cell + metrics.cell / 2,
+      y: metrics.offsetY + position.y * metrics.cell + metrics.cell / 2,
     };
   }
 
-  private renderState(): void {
-    if (
-      !this.boardGraphics ||
-      !this.snakeGraphics ||
-      !this.foodGraphics ||
-      !this.foodGlyph ||
-      !this.foodLabel
-    ) {
-      return;
-    }
-
+  private renderBoard(): void {
+    if (!this.boardGraphics) return;
     const { cell, offsetX, offsetY } = this.metrics();
     const boardWidth = cell * this.state.width;
     const boardHeight = cell * this.state.height;
@@ -264,71 +308,174 @@ export class MemeSnakeScene extends Phaser.Scene {
         offsetY + y * cell,
       );
     }
-
-    this.renderFood(cell);
-    this.renderSnake(cell);
   }
 
-  private renderFood(cell: number): void {
+  private renderDynamic(progress: number, time: number): void {
+    if (
+      !this.snakeGraphics ||
+      !this.foodGraphics ||
+      !this.foodGlyph ||
+      !this.foodLabel
+    )
+      return;
+    const metrics = this.metrics();
+    this.renderFood(metrics, time);
+    this.renderSnake(metrics, progress, time);
+  }
+
+  private renderFood(metrics: BoardMetrics, time: number): void {
     const graphics = this.foodGraphics!;
     const glyph = this.foodGlyph!;
     const label = this.foodLabel!;
     const definition = FOOD_CATALOG[this.state.food.kind];
-    const point = this.toPixels(this.state.food.position);
-    const pulse = 1 + Math.sin(this.state.ticks * 0.65) * 0.08;
+    const basePoint = this.toPixels(this.state.food.position, metrics);
+    const phase = time * 0.006;
+    const rarityScale =
+      definition.rarity === "legendary"
+        ? 1.16
+        : definition.rarity === "rare"
+          ? 1.07
+          : 1;
+    const pulse = rarityScale * (1 + Math.sin(phase) * 0.075);
+    const point = {
+      x: basePoint.x,
+      y: basePoint.y + Math.sin(phase * 0.8) * 2.4,
+    };
 
     graphics.clear();
-    graphics.fillStyle(definition.color, 0.2);
-    graphics.fillCircle(point.x, point.y, cell * 0.61 * pulse);
-    graphics.lineStyle(2, definition.color, 0.92);
-    graphics.strokeCircle(point.x, point.y, cell * 0.47 * pulse);
+    graphics.fillStyle(
+      definition.color,
+      definition.rarity === "legendary" ? 0.28 : 0.17,
+    );
+    graphics.fillCircle(point.x, point.y, metrics.cell * 0.67 * pulse);
+    if (definition.rarity !== "normal") {
+      graphics.lineStyle(
+        definition.rarity === "legendary" ? 4 : 2,
+        definition.color,
+        0.86,
+      );
+      graphics.strokeCircle(point.x, point.y, metrics.cell * 0.57 * pulse);
+      graphics.lineStyle(1, 0xffffff, 0.35);
+      graphics.strokeCircle(point.x, point.y, metrics.cell * 0.69 * pulse);
+    }
     glyph
       .setText(FOOD_GLYPHS[this.state.food.kind])
-      .setFontSize(Math.round(cell * 0.72))
+      .setColor(this.state.food.kind === "super-meme" ? "#fff45f" : "#ffffff")
+      .setFontSize(Math.round(metrics.cell * 0.72))
       .setPosition(point.x, point.y + 1)
-      .setScale(pulse);
+      .setScale(pulse)
+      .setRotation(
+        definition.rarity === "legendary" ? Math.sin(phase * 0.7) * 0.12 : 0,
+      );
+    const rarityLabel = RARITY_LABELS[definition.rarity];
     label
-      .setText(`+${definition.points}`)
-      .setPosition(point.x, point.y - cell * 0.56)
-      .setVisible(cell >= 25);
+      .setText(`${rarityLabel ? `${rarityLabel} · ` : ""}+${definition.points}`)
+      .setPosition(point.x, point.y - metrics.cell * 0.62)
+      .setColor(definition.rarity === "legendary" ? "#fff45f" : "#ffffff")
+      .setVisible(metrics.cell >= 25);
   }
 
-  private renderSnake(cell: number): void {
+  private renderSnake(
+    metrics: BoardMetrics,
+    progress: number,
+    time: number,
+  ): void {
     const graphics = this.snakeGraphics!;
     const evolution = getEvolution(this.state);
-    const head = this.state.snake[0]!;
-    const headPoint = this.toPixels(head);
-    const pulse =
-      evolution.effect === "pulse" || evolution.effect === "chaos"
-        ? 1 + Math.sin(this.state.ticks * 0.7) * 0.08
-        : 1;
+    const phase = time * 0.008;
+    const isBoosted = this.state.activeEffects.some(
+      (effect) =>
+        effect.kind === "speed-boost" &&
+        effect.expiresAtMs > this.state.elapsedMs,
+    );
+    const hasDoublePoints = this.state.activeEffects.some(
+      (effect) =>
+        effect.kind === "double-points" &&
+        effect.expiresAtMs > this.state.elapsedMs,
+    );
+    const headScale = time < this.eatPulseUntil ? 1.24 : 1;
 
     graphics.clear();
-    if (evolution.effect === "glow" || evolution.effect === "chaos") {
-      graphics.fillStyle(evolution.accentColor, 0.13);
-      graphics.fillCircle(headPoint.x, headPoint.y, cell * 0.92 * pulse);
-    }
+    for (let index = this.state.snake.length - 1; index >= 0; index -= 1) {
+      const target = this.state.snake[index]!;
+      const origin =
+        this.previousSnake[Math.min(index, this.previousSnake.length - 1)] ??
+        target;
+      const interpolated = {
+        x: interpolate(origin.x, target.x, progress),
+        y: interpolate(origin.y, target.y, progress),
+      };
+      const wobble = index === 0 ? 0 : Math.sin(phase + index * 0.85) * 0.9;
+      const basePoint = this.toPixels(interpolated, metrics);
+      const point = { x: basePoint.x, y: basePoint.y + wobble };
+      const isHead = index === 0;
+      const tailProgress = index / Math.max(1, this.state.snake.length - 1);
+      const radius = isHead
+        ? metrics.cell * 0.47 * evolution.scale * headScale
+        : metrics.cell * (0.39 - tailProgress * 0.09) * evolution.scale;
 
-    for (let index = this.state.snake.length - 1; index >= 1; index -= 1) {
-      const position = this.state.snake[index]!;
-      const point = this.toPixels(position);
-      const progress = index / Math.max(1, this.state.snake.length - 1);
-      const radius = cell * (0.39 - progress * 0.09) * evolution.scale;
+      if (
+        isHead &&
+        (evolution.effect === "glow" ||
+          evolution.effect === "chaos" ||
+          isBoosted)
+      ) {
+        graphics.fillStyle(isBoosted ? 0xd98c52 : evolution.accentColor, 0.14);
+        graphics.fillCircle(point.x, point.y, radius * 1.85);
+      }
+      if (isHead && hasDoublePoints) {
+        graphics.lineStyle(3, 0xff4fd8, 0.75 + Math.sin(phase) * 0.2);
+        graphics.strokeCircle(point.x, point.y, radius * 1.38);
+      }
+
       graphics.fillStyle(
-        index % 2 === 0 ? evolution.bodyColor : evolution.headColor,
+        isHead
+          ? evolution.headColor
+          : index % 2 === 0
+            ? evolution.bodyColor
+            : evolution.headColor,
         0.97,
       );
       graphics.fillCircle(point.x, point.y, radius);
-      graphics.lineStyle(2, evolution.accentColor, 0.22);
+      graphics.lineStyle(
+        isHead ? 3 : 2,
+        evolution.accentColor,
+        isHead ? 0.82 : 0.22,
+      );
       graphics.strokeCircle(point.x, point.y, radius);
+
+      if (isHead)
+        this.renderFace(graphics, point, metrics.cell, evolution.accentColor);
     }
 
-    const headRadius = cell * 0.47 * evolution.scale * pulse;
-    graphics.fillStyle(evolution.headColor, 1);
-    graphics.fillCircle(headPoint.x, headPoint.y, headRadius);
-    graphics.lineStyle(3, evolution.accentColor, 0.82);
-    graphics.strokeCircle(headPoint.x, headPoint.y, headRadius);
+    if (evolution.effect === "sparkles" || evolution.effect === "chaos") {
+      const head = this.state.snake[0]!;
+      const origin = this.previousSnake[0] ?? head;
+      const headPoint = this.toPixels(
+        {
+          x: interpolate(origin.x, head.x, progress),
+          y: interpolate(origin.y, head.y, progress),
+        },
+        metrics,
+      );
+      graphics.fillStyle(evolution.accentColor, 0.86);
+      for (let index = 0; index < 4; index += 1) {
+        const angle = phase * 0.7 + index * (Math.PI / 2);
+        graphics.fillCircle(
+          headPoint.x + Math.cos(angle) * metrics.cell * 0.72,
+          headPoint.y + Math.sin(angle) * metrics.cell * 0.72,
+          2.4,
+        );
+      }
+    }
+  }
 
+  private renderFace(
+    graphics: Phaser.GameObjects.Graphics,
+    headPoint: Position,
+    cell: number,
+    accentColor: number,
+  ): void {
     const vector = DIRECTION_VECTOR[this.state.direction];
     const side = { x: -vector.y, y: vector.x };
     for (const eyeSide of [-1, 1]) {
@@ -345,42 +492,58 @@ export class MemeSnakeScene extends Phaser.Scene {
         cell * 0.06,
       );
     }
-
-    graphics.lineStyle(2, evolution.accentColor, 0.9);
-    const mouthCenter = {
-      x: headPoint.x + vector.x * cell * 0.3,
-      y: headPoint.y + vector.y * cell * 0.3,
-    };
-    graphics.strokeCircle(mouthCenter.x, mouthCenter.y, cell * 0.055);
-
-    if (evolution.effect === "sparkles" || evolution.effect === "chaos") {
-      graphics.fillStyle(evolution.accentColor, 0.86);
-      for (let index = 0; index < 4; index += 1) {
-        const angle = this.state.ticks * 0.35 + index * (Math.PI / 2);
-        graphics.fillCircle(
-          headPoint.x + Math.cos(angle) * cell * 0.72,
-          headPoint.y + Math.sin(angle) * cell * 0.72,
-          2.4,
-        );
-      }
-    }
+    graphics.lineStyle(2, accentColor, 0.9);
+    graphics.strokeCircle(
+      headPoint.x + vector.x * cell * 0.3,
+      headPoint.y + vector.y * cell * 0.3,
+      cell * 0.055,
+    );
   }
 
-  private createBurst(position: Position, color: number, amount = 9): void {
-    const point = this.toPixels(position);
+  private createBurst(position: Position, color: number, amount: number): void {
+    const metrics = this.metrics();
+    const point = this.toPixels(position, metrics);
     for (let index = 0; index < amount; index += 1) {
       const angle = (Math.PI * 2 * index) / amount;
       const particle = this.add.circle(point.x, point.y, 4, color, 0.95);
       this.tweens.add({
         targets: particle,
-        x: point.x + Math.cos(angle) * Phaser.Math.Between(28, 62),
-        y: point.y + Math.sin(angle) * Phaser.Math.Between(28, 62),
+        x: point.x + Math.cos(angle) * Phaser.Math.Between(28, 68),
+        y: point.y + Math.sin(angle) * Phaser.Math.Between(28, 68),
         alpha: 0,
-        scale: 0.35,
-        duration: 320,
+        scale: 0.3,
+        duration: 360,
         ease: "Cubic.easeOut",
         onComplete: () => particle.destroy(),
       });
     }
+  }
+
+  private createFloatingText(
+    position: Position,
+    text: string,
+    color: string,
+  ): void {
+    const metrics = this.metrics();
+    const point = this.toPixels(position, metrics);
+    const label = this.add
+      .text(point.x, point.y - metrics.cell * 0.45, text, {
+        color,
+        fontFamily: "system-ui, sans-serif",
+        fontSize: "18px",
+        fontStyle: "bold",
+        stroke: "#160c2f",
+        strokeThickness: 5,
+      })
+      .setOrigin(0.5);
+    this.tweens.add({
+      targets: label,
+      y: label.y - 42,
+      alpha: 0,
+      scale: 1.18,
+      duration: 680,
+      ease: "Cubic.easeOut",
+      onComplete: () => label.destroy(),
+    });
   }
 }

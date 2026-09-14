@@ -15,14 +15,33 @@ export type FoodKind =
   | "sad-sock"
   | "duck-king"
   | "cringe-energy"
-  | "influencer-avocado";
+  | "influencer-avocado"
+  | "infinite-coffee"
+  | "super-meme";
+
+export type FoodRarity = "normal" | "rare" | "legendary";
+
+export type TimedEffectKind = "speed-boost" | "double-points";
+
+export interface TimedEffectDefinition {
+  readonly kind: TimedEffectKind;
+  readonly durationMs: number;
+}
+
+export interface ActiveEffect {
+  readonly kind: TimedEffectKind;
+  readonly expiresAtMs: number;
+}
 
 export interface FoodDefinition {
   readonly kind: FoodKind;
   readonly name: string;
+  readonly rarity: FoodRarity;
+  readonly weight: number;
   readonly points: number;
   readonly growth: number;
   readonly color: number;
+  readonly effect?: TimedEffectDefinition;
 }
 
 export interface Food {
@@ -52,14 +71,18 @@ export interface Evolution {
 export const FOOD_CATALOG: Readonly<Record<FoodKind, FoodDefinition>> = {
   "legendary-potato": {
     kind: "legendary-potato",
-    name: "Patata legendaria",
-    points: 10,
-    growth: 1,
-    color: 0xc98b4b,
+    name: "Patata dorada",
+    rarity: "legendary",
+    weight: 3,
+    points: 120,
+    growth: 4,
+    color: 0xffd83d,
   },
   "flying-pizza": {
     kind: "flying-pizza",
     name: "Pizza voladora",
+    rarity: "normal",
+    weight: 22,
     points: 15,
     growth: 1,
     color: 0xffc94d,
@@ -67,13 +90,17 @@ export const FOOD_CATALOG: Readonly<Record<FoodKind, FoodDefinition>> = {
   "lost-robot": {
     kind: "lost-robot",
     name: "Robot perdido",
+    rarity: "rare",
+    weight: 8,
     points: 20,
-    growth: 1,
+    growth: 2,
     color: 0x90a4ae,
   },
   "angry-emoji": {
     kind: "angry-emoji",
     name: "Emoji enfadado",
+    rarity: "normal",
+    weight: 20,
     points: 12,
     growth: 1,
     color: 0xffd23f,
@@ -81,6 +108,8 @@ export const FOOD_CATALOG: Readonly<Record<FoodKind, FoodDefinition>> = {
   "sad-sock": {
     kind: "sad-sock",
     name: "Calcetín triste",
+    rarity: "normal",
+    weight: 20,
     points: 10,
     growth: 1,
     color: 0x8f7aea,
@@ -88,23 +117,49 @@ export const FOOD_CATALOG: Readonly<Record<FoodKind, FoodDefinition>> = {
   "duck-king": {
     kind: "duck-king",
     name: "Patito rey",
+    rarity: "rare",
+    weight: 7,
     points: 25,
-    growth: 1,
+    growth: 2,
     color: 0xffe066,
   },
   "cringe-energy": {
     kind: "cringe-energy",
     name: "Energía cringe",
-    points: 40,
-    growth: 2,
+    rarity: "rare",
+    weight: 5,
+    points: 25,
+    growth: 1,
     color: 0xff4fd8,
+    effect: { kind: "double-points", durationMs: 7_000 },
   },
   "influencer-avocado": {
     kind: "influencer-avocado",
     name: "Aguacate influencer",
+    rarity: "normal",
+    weight: 15,
     points: 30,
     growth: 1,
     color: 0x73c94f,
+  },
+  "infinite-coffee": {
+    kind: "infinite-coffee",
+    name: "Café infinito",
+    rarity: "rare",
+    weight: 5,
+    points: 25,
+    growth: 1,
+    color: 0xd98c52,
+    effect: { kind: "speed-boost", durationMs: 6_000 },
+  },
+  "super-meme": {
+    kind: "super-meme",
+    name: "Super Meme",
+    rarity: "legendary",
+    weight: 1,
+    points: 300,
+    growth: 6,
+    color: 0x5de8ff,
   },
 };
 
@@ -179,11 +234,13 @@ export interface GameState {
   readonly snake: readonly Position[];
   readonly direction: Direction;
   readonly queuedDirection: Direction;
+  readonly directionQueue: readonly Direction[];
   readonly food: Food;
   readonly score: number;
   readonly eaten: number;
   readonly growthPending: number;
   readonly evolutionId: EvolutionId;
+  readonly activeEffects: readonly ActiveEffect[];
   readonly ticks: number;
   readonly elapsedMs: number;
 }
@@ -212,6 +269,9 @@ export type GameEvent =
       readonly type: "ate";
       readonly tick: number;
       readonly kind: FoodKind;
+      readonly rarity: FoodRarity;
+      readonly basePoints: number;
+      readonly multiplier: number;
       readonly points: number;
       readonly score: number;
       readonly growth: number;
@@ -232,6 +292,18 @@ export type GameEvent =
       readonly type: "food-spawned";
       readonly tick: number;
       readonly food: Food;
+    }
+  | {
+      readonly type: "effect-started";
+      readonly tick: number;
+      readonly effect: TimedEffectKind;
+      readonly expiresAtMs: number;
+      readonly refreshed: boolean;
+    }
+  | {
+      readonly type: "effect-expired";
+      readonly tick: number;
+      readonly effect: TimedEffectKind;
     }
   | {
       readonly type: "collision";
@@ -259,12 +331,15 @@ export interface GameSnapshot {
   readonly snake: readonly Position[];
   readonly direction: Direction;
   readonly queuedDirection: Direction;
+  readonly directionQueue: readonly Direction[];
   readonly food: Food;
   readonly score: number;
   readonly eaten: number;
   readonly growthPending: number;
   readonly evolutionId: EvolutionId;
   readonly evolutionName: string;
+  readonly activeEffects: readonly ActiveEffect[];
+  readonly difficultyLevel: number;
   readonly ticks: number;
   readonly tickMs: number;
   readonly elapsedMs: number;
@@ -275,6 +350,13 @@ const DEFAULT_WIDTH = 24;
 const DEFAULT_HEIGHT = 16;
 const MIN_WIDTH = 8;
 const MIN_HEIGHT = 6;
+const MAX_DIRECTION_QUEUE = 2;
+const DIFFICULTY_INTERVAL_MS = 15_000;
+const MAX_DIFFICULTY_LEVEL = 12;
+const TICK_REDUCTION_PER_LEVEL_MS = 3;
+const MIN_TICK_MS = 78;
+const SPEED_BOOST_MULTIPLIER = 0.75;
+const MIN_BOOSTED_TICK_MS = 58;
 
 const VECTORS: Readonly<Record<Direction, Position>> = {
   up: { x: 0, y: -1 },
@@ -353,6 +435,26 @@ function randomIndex(
   };
 }
 
+/** Selects a food from a stable weighted interval. Useful for deterministic tests. */
+export function selectFoodKind(value: number): FoodKind {
+  if (!Number.isFinite(value) || value < 0 || value >= 1) {
+    throw new RangeError(
+      "El valor aleatorio debe estar entre 0 (incluido) y 1.",
+    );
+  }
+
+  const totalWeight = FOOD_KINDS.reduce(
+    (total, kind) => total + FOOD_CATALOG[kind].weight,
+    0,
+  );
+  let cursor = value * totalWeight;
+  for (const kind of FOOD_KINDS) {
+    cursor -= FOOD_CATALOG[kind].weight;
+    if (cursor < 0) return kind;
+  }
+  return FOOD_KINDS.at(-1)!;
+}
+
 function spawnFood(
   rngState: number,
   width: number,
@@ -373,11 +475,11 @@ function spawnFood(
   }
 
   const cellRoll = randomIndex(rngState, free.length);
-  const kindRoll = randomIndex(cellRoll.rngState, FOOD_KINDS.length);
+  const kindRoll = nextRandom(cellRoll.rngState);
   return {
     rngState: kindRoll.rngState,
     food: {
-      kind: FOOD_KINDS[kindRoll.index]!,
+      kind: selectFoodKind(kindRoll.value),
       position: free[cellRoll.index]!,
     },
   };
@@ -408,11 +510,13 @@ export function createInitialState(
     snake,
     direction: "right",
     queuedDirection: "right",
+    directionQueue: [],
     food: spawned.food,
     score: 0,
     eaten: 0,
     growthPending: 0,
     evolutionId: EVOLUTIONS[0]!.id,
+    activeEffects: [],
     ticks: 0,
     elapsedMs: 0,
   };
@@ -436,9 +540,17 @@ export function queueDirection(
   direction: Direction,
 ): GameState {
   if (state.status === "game-over") return state;
-  if (direction === OPPOSITE[state.direction]) return state;
-  if (direction === state.queuedDirection) return state;
-  return { ...state, queuedDirection: direction };
+  const lastDirection = state.directionQueue.at(-1) ?? state.direction;
+  if (direction === OPPOSITE[lastDirection]) return state;
+  if (direction === lastDirection) return state;
+  if (state.directionQueue.length >= MAX_DIRECTION_QUEUE) return state;
+
+  const directionQueue = [...state.directionQueue, direction];
+  return {
+    ...state,
+    queuedDirection: directionQueue[0]!,
+    directionQueue,
+  };
 }
 
 function collidesWithWall(
@@ -457,6 +569,7 @@ function collidesWithWall(
 function gameOver(
   state: GameState,
   tick: number,
+  elapsedMs: number,
   collision: CollisionKind,
   at: Position,
   prefixEvents: readonly GameEvent[],
@@ -465,7 +578,7 @@ function gameOver(
     ...state,
     status: "game-over",
     ticks: tick,
-    elapsedMs: state.elapsedMs + getTickMs(state),
+    elapsedMs,
   };
   return {
     state: ended,
@@ -489,23 +602,39 @@ export function step(inputState: GameState): StepResult {
   const started = start(inputState);
   const state = started.state;
   const tick = state.ticks + 1;
-  const direction = state.queuedDirection;
+  const tickMs = getTickMs(state);
+  const elapsedMs = state.elapsedMs + tickMs;
+  const direction = state.directionQueue[0] ?? state.queuedDirection;
+  const directionQueue = state.directionQueue.slice(1);
+  const queuedDirection = directionQueue[0] ?? direction;
   const vector = VECTORS[direction];
   const head = state.snake[0]!;
   const nextHead: Position = { x: head.x + vector.x, y: head.y + vector.y };
   const events: GameEvent[] = [...started.events];
+  const activeEffects = state.activeEffects.filter((effect) => {
+    if (effect.expiresAtMs > elapsedMs) return true;
+    events.push({ type: "effect-expired", tick, effect: effect.kind });
+    return false;
+  });
+  const stateAtTick: GameState = {
+    ...state,
+    direction,
+    queuedDirection,
+    directionQueue,
+    activeEffects,
+  };
 
   if (direction !== state.direction) {
     events.push({ type: "direction-changed", tick, direction });
   }
   if (collidesWithWall(nextHead, state.width, state.height)) {
-    return gameOver(state, tick, "wall", nextHead, events);
+    return gameOver(stateAtTick, tick, elapsedMs, "wall", nextHead, events);
   }
 
   const bodyThatRemains =
     state.growthPending > 0 ? state.snake : state.snake.slice(0, -1);
   if (bodyThatRemains.some((position) => samePosition(position, nextHead))) {
-    return gameOver(state, tick, "self", nextHead, events);
+    return gameOver(stateAtTick, tick, elapsedMs, "self", nextHead, events);
   }
 
   const ate = samePosition(nextHead, state.food.position);
@@ -514,7 +643,13 @@ export function step(inputState: GameState): StepResult {
   const snake = growsThisTick
     ? [nextHead, ...state.snake]
     : [nextHead, ...state.snake.slice(0, -1)];
-  const score = state.score + (definition?.points ?? 0);
+  const multiplier = activeEffects.some(
+    (effect) => effect.kind === "double-points",
+  )
+    ? 2
+    : 1;
+  const awardedPoints = (definition?.points ?? 0) * multiplier;
+  const score = state.score + awardedPoints;
   const eaten = state.eaten + (ate ? 1 : 0);
   const pendingBeforeMovement = Math.max(0, state.growthPending - 1);
   const growthPending =
@@ -522,6 +657,7 @@ export function step(inputState: GameState): StepResult {
   const evolution = evolutionFor(eaten);
   let rngState = state.rngState;
   let food = state.food;
+  let nextActiveEffects = activeEffects;
 
   events.push({ type: "moved", tick, head: nextHead, length: snake.length });
   if (growsThisTick) {
@@ -532,10 +668,33 @@ export function step(inputState: GameState): StepResult {
       type: "ate",
       tick,
       kind: definition.kind,
-      points: definition.points,
+      rarity: definition.rarity,
+      basePoints: definition.points,
+      multiplier,
+      points: awardedPoints,
       score,
       growth: definition.growth,
     });
+    if (definition.effect) {
+      const refreshed = activeEffects.some(
+        (effect) => effect.kind === definition.effect?.kind,
+      );
+      const effect: ActiveEffect = {
+        kind: definition.effect.kind,
+        expiresAtMs: elapsedMs + definition.effect.durationMs,
+      };
+      nextActiveEffects = [
+        ...activeEffects.filter((active) => active.kind !== effect.kind),
+        effect,
+      ];
+      events.push({
+        type: "effect-started",
+        tick,
+        effect: effect.kind,
+        expiresAtMs: effect.expiresAtMs,
+        refreshed,
+      });
+    }
     if (evolution.id !== state.evolutionId) {
       events.push({
         type: "evolved",
@@ -557,21 +716,50 @@ export function step(inputState: GameState): StepResult {
       status: "playing",
       snake,
       direction,
-      queuedDirection: direction,
+      queuedDirection,
+      directionQueue,
       food,
       score,
       eaten,
       growthPending,
       evolutionId: evolution.id,
+      activeEffects: nextActiveEffects,
       ticks: tick,
-      elapsedMs: state.elapsedMs + getTickMs(state),
+      elapsedMs,
     },
     events,
   };
 }
 
-export function getTickMs(state: Pick<GameState, "eaten">): number {
-  return evolutionFor(state.eaten).tickMs;
+export function getDifficultyLevel(
+  state: Pick<GameState, "elapsedMs">,
+): number {
+  return Math.min(
+    MAX_DIFFICULTY_LEVEL,
+    Math.floor(Math.max(0, state.elapsedMs) / DIFFICULTY_INTERVAL_MS),
+  );
+}
+
+type TickState = Pick<GameState, "eaten"> &
+  Partial<Pick<GameState, "elapsedMs" | "activeEffects">>;
+
+export function getTickMs(state: TickState): number {
+  const elapsedMs = state.elapsedMs ?? 0;
+  const difficulty = getDifficultyLevel({ elapsedMs });
+  const normalTickMs = Math.max(
+    MIN_TICK_MS,
+    evolutionFor(state.eaten).tickMs - difficulty * TICK_REDUCTION_PER_LEVEL_MS,
+  );
+  const hasSpeedBoost = (state.activeEffects ?? []).some(
+    (effect) => effect.kind === "speed-boost" && effect.expiresAtMs > elapsedMs,
+  );
+
+  return hasSpeedBoost
+    ? Math.max(
+        MIN_BOOSTED_TICK_MS,
+        Math.round(normalTickMs * SPEED_BOOST_MULTIPLIER),
+      )
+    : normalTickMs;
 }
 
 export function createSnapshot(state: GameState): GameSnapshot {
@@ -584,6 +772,7 @@ export function createSnapshot(state: GameState): GameSnapshot {
     snake: state.snake.map((position) => ({ ...position })),
     direction: state.direction,
     queuedDirection: state.queuedDirection,
+    directionQueue: [...state.directionQueue],
     food: {
       kind: state.food.kind,
       position: { ...state.food.position },
@@ -593,8 +782,10 @@ export function createSnapshot(state: GameState): GameSnapshot {
     growthPending: state.growthPending,
     evolutionId: evolution.id,
     evolutionName: evolution.name,
+    activeEffects: state.activeEffects.map((effect) => ({ ...effect })),
+    difficultyLevel: getDifficultyLevel(state),
     ticks: state.ticks,
-    tickMs: evolution.tickMs,
+    tickMs: getTickMs(state),
     elapsedMs: state.elapsedMs,
   };
 }
