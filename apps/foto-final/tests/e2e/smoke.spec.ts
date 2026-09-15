@@ -53,6 +53,10 @@ test.beforeEach(async ({ page }) => {
       localStorage.clear();
       sessionStorage.setItem(resetMarker, "done");
     }
+    Object.defineProperty(navigator, "share", {
+      configurable: true,
+      value: undefined,
+    });
   });
 });
 
@@ -92,10 +96,12 @@ test("completa, comparte y conserva una partida local", async ({
 
   const gameOver = page.getByTestId("game-over");
   await expect(gameOver).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByTestId("final-score")).toContainText("0");
+  await expect(page.getByTestId("result-phrase")).toBeVisible();
   await page.getByTestId("share-button").click();
   await expect(page.getByTestId("share-result")).toBeVisible();
   await expect(page.locator("#share-text")).toHaveValue(
-    /He creado un .* nivel \d+ 😂/,
+    /He conseguido 0 puntos en Meme Evolution Snake.*Evolución: Mini Bicho Meme.*¿Puedes superar mi resultado\?/s,
   );
 
   await page.getByTestId("restart-button").click();
@@ -134,9 +140,9 @@ test("muestra feedback inmediato y activa el turbo de Café infinito", async ({
   expect([...runtime.externalRequests]).toEqual([]);
 });
 
-test("evoluciona visualmente al obtener suficiente experiencia", async ({
+test("evoluciona, desbloquea progreso y lo conserva", async ({
   page,
-}) => {
+}, testInfo) => {
   const runtime = watchRuntime(page);
   await page.goto(`/?seed=${findReachableFoodSeed("legendary-potato")}`);
   await page.getByTestId("start-button").click();
@@ -147,6 +153,26 @@ test("evoluciona visualmente al obtener suficiente experiencia", async ({
   );
   await expect(page.locator(".hud__item--evolution .hud__value")).toHaveText(
     "Gusano Legendario",
+  );
+  await expect(page.getByTestId("evolution-celebration")).toBeHidden({
+    timeout: 3_000,
+  });
+
+  await turnUp(page, testInfo.project.name === "chromium-mobile");
+  await expect(page.getByTestId("game-over")).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByTestId("new-record")).toBeVisible();
+  await expect(page.getByTestId("final-score")).toContainText("120");
+  await expect(page.getByTestId("unlock-notifications")).toBeVisible();
+
+  await page.getByTestId("restart-button").click();
+  await page.reload();
+  await expect(page.getByTestId("start-screen")).toBeVisible();
+  await page.getByTestId("challenge-panel").locator("summary").click();
+  await expect(page.locator('[data-mission-id="score-100"]')).toHaveClass(
+    /mission-card--done/,
+  );
+  await expect(page.locator('[data-achievement-id="first-bite"]')).toHaveClass(
+    /achievement--unlocked/,
   );
 
   expect(runtime.consoleErrors).toEqual([]);

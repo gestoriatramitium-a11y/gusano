@@ -12,7 +12,7 @@ La aplicación es un juego HTML5 estático y autónomo. React gestiona la interf
 
 Esta capa no importa React, Phaser, APIs del DOM ni almacenamiento del navegador.
 
-`src/core/progress.ts` contiene el esquema versionado y las operaciones puras para acumular récord, partidas, comida, evolución máxima, supervivencia, objetivos y texto compartible. La capa React es la única que lee o escribe este estado en `localStorage` y migra el récord del MVP anterior.
+`src/core/progress.ts` contiene el esquema de persistencia local v2 y las operaciones puras para acumular récord, partidas, comida, evolución máxima, supervivencia y métricas de balance. Migra tanto el récord del MVP original como el progreso v1 sin inventar medias a partir de datos históricos incompletos. `src/core/challenges.ts` define y evalúa misiones y logros desde métricas compartidas; `src/core/results.ts` clasifica el rendimiento, selecciona frases deterministas y construye el texto compartible. La capa React es la única que lee o escribe este estado en `localStorage`.
 
 ### Escena Phaser
 
@@ -29,7 +29,7 @@ La escena no debe duplicar las reglas del núcleo. Un cambio visual no puede alt
 
 ### Integración React
 
-`src/components/GameCanvas.tsx` crea el contenedor de Phaser, instancia una única partida y destruye la instancia al desmontarse. `src/App.tsx` compone portada, marcador, barra de evolución, efectos activos, estadísticas, objetivos y estados de inicio o derrota. `src/audio/SynthAudio.ts` genera respuestas sonoras cortas mediante Web Audio sin archivos externos. `src/styles.css` resuelve transiciones, layout, controles táctiles, áreas seguras, estados de foco y adaptación a móvil.
+`src/components/GameCanvas.tsx` crea el contenedor de Phaser, instancia una única partida y destruye la instancia al desmontarse. `src/App.tsx` coordina el ciclo de pantallas y la persistencia; `src/components/ProgressPanel.tsx` presenta estadísticas, misiones y logros, y `src/components/ResultScreen.tsx` presenta el cierre de partida. `src/utils/shareResult.ts` aísla Web Share y su fallback al portapapeles. `src/audio/SynthAudio.ts` genera respuestas sonoras cortas mediante Web Audio sin archivos externos. `src/styles.css` resuelve transiciones, layout, controles táctiles, áreas seguras, estados de foco y adaptación a móvil.
 
 React y Phaser se comunican mediante una interfaz pequeña de eventos y comandos; React no modifica directamente objetos internos de la escena.
 
@@ -40,8 +40,9 @@ React y Phaser se comunican mediante una interfaz pequeña de eventos y comandos
 3. Cada entrada solicita un cambio de dirección; una cola corta conserva giros rápidos y el núcleo rechaza inversiones imposibles.
 4. Cada pulso avanza una celda y evalúa comida, puntos, XP, multiplicadores, efectos, dificultad, crecimiento, evolución y colisiones.
 5. Phaser interpola el resultado y emite feedback visual; React actualiza marcador, anuncios y efectos sonoros.
-6. Una colisión lleva al estado de derrota y detiene el avance.
-7. Volver a jugar crea un estado inicial nuevo sin recargar la aplicación.
+6. Una colisión lleva al estado de derrota, registra una única sesión local y evalúa nuevas misiones y logros.
+7. La pantalla final muestra rendimiento, comparación con el récord, frase contextual y un reto compartible mediante Web Share o portapapeles.
+8. Volver a jugar crea un estado inicial nuevo sin recargar la aplicación; récord, métricas y desbloqueos permanecen en el navegador.
 
 ## Representación y responsive
 
@@ -51,6 +52,6 @@ No se cargan assets remotos. Personajes, objetos, logotipo y efectos se construy
 
 ## Calidad y límites
 
-`tests/unit/game.test.ts` cubre las reglas de partida y la configuración de puntos, XP, rareza y aspecto; `tests/unit/progress.test.ts` cubre persistencia defensiva, barra de evolución, objetivos y texto compartible. La cobertura instrumentada se limita a `src/core/**/*.ts` y exige al menos un 90 % en ramas, funciones, líneas y sentencias. `tests/e2e/smoke.spec.ts` cubre el recorrido visible en navegadores de escritorio y móvil contra la vista previa del `dist` de producción: portada, acción principal visible, controles, dos ciclos de derrota/reinicio, persistencia, Café Infinito y una evolución visual real.
+Las pruebas unitarias separan reglas de juego, persistencia, desafíos, resultados y adaptadores de compartir. La cobertura instrumentada se limita a `src/core/**/*.ts` y exige al menos un 90 % en ramas, funciones, líneas y sentencias. `tests/e2e/smoke.spec.ts` cubre el recorrido visible en navegadores de escritorio y móvil contra la vista previa del `dist` de producción: portada, controles, feedback, evolución, resultado, compartir, desbloqueos, reinicio y persistencia.
 
-La compilación es una SPA estática. No existen endpoints, funciones de servidor, cuentas, telemetría remota, base de datos ni sincronización multijugador. Las estadísticas no personales permanecen solo en el `localStorage` del navegador y se pueden eliminar borrando los datos locales del sitio.
+La compilación es una SPA estática. No existen endpoints, funciones de servidor, cuentas, telemetría remota, base de datos ni sincronización multijugador. Las estadísticas no personales permanecen solo en el `localStorage` del navegador y se pueden eliminar borrando los datos locales del sitio. El bundle principal incluye Phaser y supera el umbral informativo de 500 kB sin comprimir; la división agresiva del bundle queda fuera de esta iteración.

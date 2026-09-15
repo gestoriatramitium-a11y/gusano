@@ -199,6 +199,11 @@ describe("comida, crecimiento y evolución", () => {
     expect(result.state.score).toBe(FOOD_CATALOG["flying-pizza"].points);
     expect(result.state.eaten).toBe(1);
     expect(result.state.experience).toBe(2);
+    expect(result.state.collectedByRarity).toEqual({
+      normal: 1,
+      rare: 0,
+      legendary: 0,
+    });
     expect(result.state.snake).toHaveLength(initial.snake.length + 1);
     expect(result.state.snake).not.toContainEqual(result.state.food.position);
     expect(result.events).toContainEqual(
@@ -221,6 +226,7 @@ describe("comida, crecimiento y evolución", () => {
     const second = step(first).state;
 
     expect(first.growthPending).toBe(3);
+    expect(first.collectedByRarity.legendary).toBe(1);
     expect(first.snake).toHaveLength(initial.snake.length + 1);
     expect(second.growthPending).toBe(2);
     expect(second.snake).toHaveLength(initial.snake.length + 2);
@@ -481,6 +487,8 @@ describe("snapshots", () => {
     expect(snapshot.activeEffects).toEqual(state.activeEffects);
     expect(snapshot.activeEffects).not.toBe(state.activeEffects);
     expect(snapshot.activeEffects[0]).not.toBe(state.activeEffects[0]);
+    expect(snapshot.collectedByRarity).toEqual(state.collectedByRarity);
+    expect(snapshot.collectedByRarity).not.toBe(state.collectedByRarity);
     expect(snapshot.experience).toBe(0);
     expect(snapshot.difficultyLevel).toBe(1);
     expect(snapshot.tickMs).toBe(147);

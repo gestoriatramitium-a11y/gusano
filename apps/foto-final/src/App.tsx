@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { SynthAudio } from "./audio/SynthAudio";
 import { GameCanvas, type GameController } from "./components/GameCanvas";
+import { ProgressPanel } from "./components/ProgressPanel";
+import { ResultScreen } from "./components/ResultScreen";
+import { ACHIEVEMENT_CATALOG, MISSION_CATALOG } from "./core/challenges";
 import {
   EVOLUTIONS,
   FOOD_CATALOG,
@@ -11,19 +14,24 @@ import {
   type TimedEffectKind,
 } from "./core/game";
 import {
+  completeRun,
   createInitialPlayerProgress,
-  createShareText,
   getEvolutionProgress,
-  getProgressObjectives,
   parsePlayerProgress,
-  recordCompletedRun,
   serializePlayerProgress,
   type PlayerProgress,
-  type ProgressObjective,
 } from "./core/progress";
+import {
+  createShareText,
+  formatDuration,
+  selectResultPhrase,
+  type ResultContext,
+} from "./core/results";
+import { shareResultText } from "./utils/shareResult";
 
 const LEGACY_BEST_SCORE_KEY = "meme-evolution-snake:best-score";
-const PLAYER_PROGRESS_KEY = "meme-evolution-snake:player-progress:v1";
+const PREVIOUS_PLAYER_PROGRESS_KEY = "meme-evolution-snake:player-progress:v1";
+const PLAYER_PROGRESS_KEY = "meme-evolution-snake:player-progress:v2";
 
 const EAT_MESSAGES = [
   "¡Ese meme estaba delicioso!",
@@ -32,18 +40,19 @@ const EAT_MESSAGES = [
   "¡ÑAM! La ciencia no puede explicarlo.",
 ] as const;
 
-const DEFEAT_MESSAGES = [
-  "Tu bicho necesitaba más memes.",
-  "El universo no estaba preparado.",
-  "Has muerto con dignidad... más o menos.",
-] as const;
-
 type Screen = "start" | "playing" | "game-over";
+
+interface UnlockNotice {
+  readonly id: string;
+  readonly kind: "achievement" | "mission";
+  readonly title: string;
+}
 
 function readPlayerProgress(): PlayerProgress {
   try {
     return parsePlayerProgress(
-      localStorage.getItem(PLAYER_PROGRESS_KEY),
+      localStorage.getItem(PLAYER_PROGRESS_KEY) ??
+        localStorage.getItem(PREVIOUS_PLAYER_PROGRESS_KEY),
       localStorage.getItem(LEGACY_BEST_SCORE_KEY),
     );
   } catch {
@@ -63,31 +72,8 @@ function storePlayerProgress(progress: PlayerProgress): void {
   }
 }
 
-function formatTime(milliseconds: number): string {
-  const totalSeconds = Math.floor(milliseconds / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-}
-
-function evolutionName(id: PlayerProgress["highestEvolutionId"]): string {
-  return (
-    EVOLUTIONS.find((evolution) => evolution.id === id)?.name ??
-    "Mini Bicho Meme"
-  );
-}
-
 function effectLabel(effect: TimedEffectKind): string {
   return effect === "speed-boost" ? "☕ Turbo café" : "⚡ Puntos x2";
-}
-
-function objectiveValue(objective: ProgressObjective): string {
-  if (objective.unit === "milliseconds") {
-    return `${formatTime(objective.current)} / ${formatTime(objective.target)}`;
-  }
-  if (objective.unit === "memes")
-    return `${objective.current} / ${objective.target}`;
-  return `${objective.percent}%`;
 }
 
 export function App() {
@@ -97,18 +83,20 @@ export function App() {
   const [progress, setProgress] = useState(readPlayerProgress);
   const [announcement, setAnnouncement] = useState("");
   const [celebration, setCelebration] = useState<string | null>(null);
-  const [defeatMessage, setDefeatMessage] = useState<string>(
-    DEFEAT_MESSAGES[0],
-  );
   const [sharePreview, setSharePreview] = useState("");
   const [copyStatus, setCopyStatus] = useState("");
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [isNewRecord, setIsNewRecord] = useState(false);
+  const [previousBestScore, setPreviousBestScore] = useState(
+    progress.bestScore,
+  );
+  const [unlockNotices, setUnlockNotices] = useState<readonly UnlockNotice[]>(
+    [],
+  );
   const announcementTimer = useRef<number | null>(null);
   const celebrationTimer = useRef<number | null>(null);
   const runRecorded = useRef(false);
   const progressRef = useRef(progress);
-  const bestBeforeRun = useRef(progress.bestScore);
   const audio = useRef<SynthAudio | null>(null);
 
   useEffect(
@@ -145,13 +133,30 @@ export function App() {
       setScreen("game-over");
       if (!runRecorded.current) {
         runRecorded.current = true;
-        setIsNewRecord(
-          nextSnapshot.score > 0 && nextSnapshot.score > bestBeforeRun.current,
+        const update = completeRun(progressRef.current, nextSnapshot);
+        const achievementNotices = update.newlyUnlockedAchievementIds.map(
+          (id): UnlockNotice => ({
+            id,
+            kind: "achievement",
+            title:
+              ACHIEVEMENT_CATALOG.find((achievement) => achievement.id === id)
+                ?.title ?? id,
+          }),
         );
-        const updated = recordCompletedRun(progressRef.current, nextSnapshot);
-        progressRef.current = updated;
-        storePlayerProgress(updated);
-        setProgress(updated);
+        const missionNotices = update.newlyCompletedMissionIds.map(
+          (id): UnlockNotice => ({
+            id,
+            kind: "mission",
+            title:
+              MISSION_CATALOG.find((mission) => mission.id === id)?.title ?? id,
+          }),
+        );
+        setPreviousBestScore(update.previousBestScore);
+        setIsNewRecord(update.isNewRecord);
+        setUnlockNotices([...achievementNotices, ...missionNotices]);
+        progressRef.current = update.progress;
+        storePlayerProgress(update.progress);
+        setProgress(update.progress);
       }
     } else if (nextSnapshot.status === "playing") {
       setScreen("playing");
@@ -199,7 +204,6 @@ export function App() {
           900,
         );
       } else if (event.type === "game-over") {
-        setDefeatMessage(DEFEAT_MESSAGES[event.tick % DEFEAT_MESSAGES.length]!);
         audio.current?.playGameOver();
         navigator.vibrate?.([90, 45, 120]);
       }
@@ -213,15 +217,16 @@ export function App() {
     audio.current.setMuted(!soundEnabled);
     void audio.current.unlock();
     runRecorded.current = false;
-    bestBeforeRun.current = progress.bestScore;
+    setPreviousBestScore(progressRef.current.bestScore);
     setIsNewRecord(false);
+    setUnlockNotices([]);
     setAnnouncement("");
     setCelebration(null);
     setSharePreview("");
     setCopyStatus("");
     setScreen("playing");
     controller.startRun();
-  }, [controller, progress.bestScore, soundEnabled]);
+  }, [controller, soundEnabled]);
 
   const changeDirection = useCallback(
     (direction: Direction) => controller?.changeDirection(direction),
@@ -239,23 +244,56 @@ export function App() {
 
   const copyResult = useCallback(async () => {
     if (!snapshot) return;
-    const text = createShareText(snapshot);
+    const context: ResultContext = {
+      ...snapshot,
+      previousBestScore,
+      isNewRecord,
+    };
+    const phrase = selectResultPhrase(context);
+    const text = createShareText(context, phrase.text);
     setSharePreview(text);
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopyStatus("¡Reto copiado! Ya puedes compartirlo donde quieras.");
-      announce("¡Resultado copiado!", 2200);
-    } catch {
-      setCopyStatus("Copia el texto de abajo para compartir tu reto.");
-      announce("Texto listo para copiar.", 2200);
-    }
-  }, [announce, snapshot]);
+    const outcome = await shareResultText(text, {
+      ...(typeof navigator.share === "function"
+        ? {
+            nativeShare: (shareText: string) =>
+              navigator.share({
+                title: "Meme Evolution Snake",
+                text: shareText,
+              }),
+          }
+        : {}),
+      ...(typeof navigator.clipboard?.writeText === "function"
+        ? {
+            copyText: (shareText: string) =>
+              navigator.clipboard.writeText(shareText),
+          }
+        : {}),
+    });
+    const statuses = {
+      shared: "¡Resultado compartido! El caos viaja.",
+      copied: "¡Reto copiado! Ya puedes compartirlo donde quieras.",
+      manual: "Copia el texto de abajo para compartir tu reto.",
+      cancelled: "Compartición cancelada. El reto sigue preparado.",
+    } as const;
+    setCopyStatus(statuses[outcome]);
+    announce(statuses[outcome], 2200);
+  }, [announce, isNewRecord, previousBestScore, snapshot]);
 
   const score = snapshot?.score ?? 0;
   const currentEvolution = snapshot?.evolutionName ?? "Mini Bicho Meme";
   const elapsedMs = snapshot?.elapsedMs ?? 0;
   const evolutionProgress = getEvolutionProgress(snapshot?.experience ?? 0);
-  const objectives = useMemo(() => getProgressObjectives(progress), [progress]);
+  const resultPhrase = useMemo(
+    () =>
+      snapshot
+        ? selectResultPhrase({
+            ...snapshot,
+            previousBestScore,
+            isNewRecord,
+          })
+        : null,
+    [isNewRecord, previousBestScore, snapshot],
+  );
 
   return (
     <main className="app-shell">
@@ -307,7 +345,9 @@ export function App() {
             </div>
             <div className="hud__item">
               <span className="hud__label">Tiempo</span>
-              <strong className="hud__value">{formatTime(elapsedMs)}</strong>
+              <strong className="hud__value">
+                {formatDuration(elapsedMs)}
+              </strong>
             </div>
           </div>
 
@@ -414,120 +454,51 @@ export function App() {
                     </p>
                   </div>
 
-                  <aside
-                    className="local-progress"
-                    aria-label="Tus hazañas locales"
-                  >
-                    <p className="panel-kicker">Tus hazañas</p>
-                    <div className="player-stats">
-                      <div>
-                        <strong data-testid="stats-games">
-                          {progress.gamesPlayed}
-                        </strong>
-                        <span>Partidas</span>
-                      </div>
-                      <div>
-                        <strong>{progress.totalFood}</strong>
-                        <span>Memes</span>
-                      </div>
-                      <div>
-                        <strong>
-                          {evolutionName(progress.highestEvolutionId)}
-                        </strong>
-                        <span>Evolución máxima</span>
-                      </div>
-                      <div>
-                        <strong>{formatTime(progress.bestSurvivalMs)}</strong>
-                        <span>Mejor tiempo</span>
-                      </div>
-                    </div>
-                    <div className="objective-list">
-                      {objectives.map((objective) => (
-                        <article
-                          className={`objective ${objective.completed ? "objective--done" : ""}`}
-                          key={objective.id}
-                        >
-                          <div>
-                            <strong>
-                              {objective.completed ? "✓ " : ""}
-                              {objective.title}
-                            </strong>
-                            <span>{objectiveValue(objective)}</span>
-                          </div>
-                          <div className="objective__track">
-                            <span style={{ width: `${objective.percent}%` }} />
-                          </div>
-                        </article>
-                      ))}
-                    </div>
-                  </aside>
+                  <ProgressPanel progress={progress} />
                 </div>
               </div>
             )}
 
-            {screen === "game-over" && (
-              <div
-                className="screen-overlay screen-overlay--defeat"
-                data-testid="game-over"
-              >
-                <div className="defeat-card">
-                  <p className="eyebrow">Fin de la evolución</p>
-                  <h2>
-                    Has creado un <span>{currentEvolution}</span> nivel{" "}
-                    {snapshot?.eaten ?? 0}
-                  </h2>
-                  <p className="defeat-card__copy">{defeatMessage}</p>
-                  {isNewRecord && (
-                    <p className="new-record">🏆 ¡Nuevo récord personal!</p>
-                  )}
-                  <div className="result-grid" aria-label="Resultado final">
-                    <div>
-                      <strong>{score}</strong>
-                      <span>Puntos</span>
-                    </div>
-                    <div>
-                      <strong>{snapshot?.eaten ?? 0}</strong>
-                      <span>Objetos</span>
-                    </div>
-                    <div>
-                      <strong>{formatTime(elapsedMs)}</strong>
-                      <span>Tiempo</span>
-                    </div>
-                  </div>
-                  <div className="defeat-actions">
-                    <button
-                      className="primary-button"
-                      type="button"
-                      onClick={startGame}
-                      data-testid="restart-button"
-                    >
-                      Volver a jugar
-                    </button>
-                    <button
-                      className="secondary-button"
-                      type="button"
-                      onClick={() => void copyResult()}
-                      data-testid="share-button"
-                    >
-                      Compartir
-                    </button>
-                  </div>
-                  {sharePreview && (
-                    <div className="share-result" data-testid="share-result">
-                      <label htmlFor="share-text">Tu reto está listo</label>
-                      <textarea
-                        id="share-text"
-                        readOnly
-                        value={sharePreview}
-                        rows={3}
-                      />
-                      <span>{copyStatus}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
+            {screen === "game-over" && snapshot && resultPhrase && (
+              <ResultScreen
+                snapshot={snapshot}
+                phrase={resultPhrase}
+                previousBestScore={previousBestScore}
+                personalBest={progress.bestScore}
+                isNewRecord={isNewRecord}
+                sharePreview={sharePreview}
+                shareStatus={copyStatus}
+                onRestart={startGame}
+                onShare={() => void copyResult()}
+              />
             )}
           </div>
+
+          {unlockNotices.length > 0 && screen === "game-over" && (
+            <div
+              className="unlock-stack"
+              role="status"
+              aria-label="Nuevos desbloqueos"
+              data-testid="unlock-notifications"
+            >
+              {unlockNotices.slice(0, 3).map((notice) => (
+                <div
+                  className={`unlock-notice unlock-notice--${notice.kind}`}
+                  key={`${notice.kind}-${notice.id}`}
+                >
+                  <span>
+                    {notice.kind === "achievement" ? "Logro" : "Misión"}
+                  </span>
+                  <strong>{notice.title}</strong>
+                </div>
+              ))}
+              {unlockNotices.length > 3 && (
+                <div className="unlock-notice unlock-notice--more">
+                  <strong>+{unlockNotices.length - 3} desbloqueos más</strong>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="touch-controls" data-visible={screen === "playing"}>
             <button

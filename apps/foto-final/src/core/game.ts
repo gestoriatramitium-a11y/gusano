@@ -21,6 +21,8 @@ export type FoodKind =
 
 export type FoodRarity = "normal" | "rare" | "legendary";
 
+export type RarityCounts = Readonly<Record<FoodRarity, number>>;
+
 export type FoodVisualEffect =
   "float" | "pulse" | "spin" | "electric" | "chaos";
 
@@ -275,6 +277,7 @@ export interface GameState {
   readonly score: number;
   readonly eaten: number;
   readonly experience: number;
+  readonly collectedByRarity: RarityCounts;
   readonly growthPending: number;
   readonly evolutionId: EvolutionId;
   readonly activeEffects: readonly ActiveEffect[];
@@ -374,6 +377,7 @@ export interface GameSnapshot {
   readonly score: number;
   readonly eaten: number;
   readonly experience: number;
+  readonly collectedByRarity: RarityCounts;
   readonly growthPending: number;
   readonly evolutionId: EvolutionId;
   readonly evolutionName: string;
@@ -554,6 +558,7 @@ export function createInitialState(
     score: 0,
     eaten: 0,
     experience: 0,
+    collectedByRarity: { normal: 0, rare: 0, legendary: 0 },
     growthPending: 0,
     evolutionId: EVOLUTIONS[0]!.id,
     activeEffects: [],
@@ -692,6 +697,12 @@ export function step(inputState: GameState): StepResult {
   const score = state.score + awardedPoints;
   const eaten = state.eaten + (ate ? 1 : 0);
   const experience = state.experience + (definition?.experience ?? 0);
+  const collectedByRarity = definition
+    ? {
+        ...state.collectedByRarity,
+        [definition.rarity]: state.collectedByRarity[definition.rarity] + 1,
+      }
+    : state.collectedByRarity;
   const pendingBeforeMovement = Math.max(0, state.growthPending - 1);
   const growthPending =
     pendingBeforeMovement + (definition ? definition.growth - 1 : 0);
@@ -764,6 +775,7 @@ export function step(inputState: GameState): StepResult {
       score,
       eaten,
       experience,
+      collectedByRarity,
       growthPending,
       evolutionId: evolution.id,
       activeEffects: nextActiveEffects,
@@ -824,6 +836,7 @@ export function createSnapshot(state: GameState): GameSnapshot {
     score: state.score,
     eaten: state.eaten,
     experience: state.experience,
+    collectedByRarity: { ...state.collectedByRarity },
     growthPending: state.growthPending,
     evolutionId: evolution.id,
     evolutionName: evolution.name,
