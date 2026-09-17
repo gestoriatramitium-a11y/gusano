@@ -94,10 +94,10 @@ describe("catálogos de Meme Evolution Snake", () => {
 
   it("mantiene umbrales y velocidades ordenados", () => {
     expect(EVOLUTIONS.map((evolution) => evolution.minExperience)).toEqual([
-      0, 8, 20, 38, 62,
+      0, 8, 22, 42, 70,
     ]);
     expect(EVOLUTIONS.map((evolution) => evolution.tickMs)).toEqual([
-      150, 140, 128, 116, 104,
+      165, 154, 143, 132, 120,
     ]);
   });
 });
@@ -142,7 +142,8 @@ describe("movimiento y controles", () => {
 
     expect(result.state.snake[0]).toEqual({ x: head.x + 1, y: head.y });
     expect(result.state.ticks).toBe(1);
-    expect(result.state.elapsedMs).toBe(150);
+    expect(result.state.elapsedMs).toBe(165);
+    expect(result.state.fastestTickMs).toBe(165);
     expect(result.events.map((event) => event.type)).toContain("started");
     expect(result.events.map((event) => event.type)).toContain("moved");
   });
@@ -300,11 +301,11 @@ describe("comida, crecimiento y evolución", () => {
   });
 
   it.each([
-    [0, "mini-bicho", 150],
-    [8, "gusano-legendario", 140],
-    [20, "serpiente-influencer", 128],
-    [38, "monstruo-meme", 116],
-    [62, "dios-del-caos", 104],
+    [0, "mini-bicho", 165],
+    [8, "gusano-legendario", 154],
+    [22, "serpiente-influencer", 143],
+    [42, "monstruo-meme", 132],
+    [70, "dios-del-caos", 120],
   ] as const)(
     "selecciona la evolución para %i XP",
     (experience, id, tickMs) => {
@@ -337,15 +338,15 @@ describe("comida, crecimiento y evolución", () => {
 });
 
 describe("dificultad y velocidad temporal", () => {
-  it("acelera progresivamente cada quince segundos y limita la dificultad", () => {
+  it("acelera progresivamente cada veinte segundos y limita la dificultad", () => {
     const initial = createInitialState(22);
 
     expect(getDifficultyLevel(initial)).toBe(0);
-    expect(getTickMs(initial)).toBe(150);
-    expect(getTickMs({ ...initial, elapsedMs: 15_000 })).toBe(147);
-    expect(getDifficultyLevel({ ...initial, elapsedMs: 999_999 })).toBe(12);
-    expect(getTickMs({ ...initial, elapsedMs: 999_999, experience: 62 })).toBe(
-      78,
+    expect(getTickMs(initial)).toBe(165);
+    expect(getTickMs({ ...initial, elapsedMs: 20_000 })).toBe(163);
+    expect(getDifficultyLevel({ ...initial, elapsedMs: 999_999 })).toBe(10);
+    expect(getTickMs({ ...initial, elapsedMs: 999_999, experience: 70 })).toBe(
+      100,
     );
   });
 
@@ -360,21 +361,21 @@ describe("dificultad y velocidad temporal", () => {
       kind: "speed-boost",
       expiresAtMs: collected.state.elapsedMs + 6_000,
     });
-    expect(getTickMs(collected.state)).toBe(113);
+    expect(getTickMs(collected.state)).toBe(129);
     expect(
       getTickMs({
         ...collected.state,
-        experience: 62,
+        experience: 70,
         elapsedMs: 999_999,
         activeEffects: [{ kind: "speed-boost", expiresAtMs: 1_000_000 }],
       }),
-    ).toBeGreaterThanOrEqual(58);
+    ).toBeGreaterThanOrEqual(74);
     expect(
       getTickMs({
         ...collected.state,
         elapsedMs: speedEffect?.expiresAtMs ?? 0,
       }),
-    ).toBeGreaterThan(113);
+    ).toBeGreaterThan(129);
   });
 });
 
@@ -394,7 +395,7 @@ describe("colisiones, derrota y reinicio", () => {
     const result = step(initial);
 
     expect(result.state.status).toBe("game-over");
-    expect(result.state.elapsedMs).toBe(150);
+    expect(result.state.elapsedMs).toBe(165);
     expect(result.events).toContainEqual({
       type: "collision",
       tick: 1,
@@ -474,7 +475,7 @@ describe("snapshots", () => {
     const state: GameState = {
       ...queueDirection(createInitialState(55), "up"),
       activeEffects: [{ kind: "double-points", expiresAtMs: 7_000 }],
-      elapsedMs: 15_000,
+      elapsedMs: 20_000,
     };
     const snapshot = createSnapshot(state);
 
@@ -491,7 +492,8 @@ describe("snapshots", () => {
     expect(snapshot.collectedByRarity).not.toBe(state.collectedByRarity);
     expect(snapshot.experience).toBe(0);
     expect(snapshot.difficultyLevel).toBe(1);
-    expect(snapshot.tickMs).toBe(147);
+    expect(snapshot.tickMs).toBe(163);
+    expect(snapshot.fastestTickMs).toBe(165);
     expect(snapshot.evolutionName).toBe("Mini Bicho Meme");
   });
 });

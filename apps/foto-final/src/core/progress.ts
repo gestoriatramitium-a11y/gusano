@@ -18,7 +18,7 @@ import {
   type RarityCounts,
 } from "./game";
 
-export const PLAYER_PROGRESS_VERSION = 2 as const;
+export const PLAYER_PROGRESS_VERSION = 3 as const;
 const MAX_STORED_NUMBER = Number.MAX_SAFE_INTEGER;
 
 export type EvolutionCounts = Readonly<Record<EvolutionId, number>>;
@@ -27,6 +27,9 @@ export interface PlayerMetrics {
   readonly measuredGames: number;
   readonly totalScore: number;
   readonly totalDurationMs: number;
+  readonly totalExperience: number;
+  readonly bestExperience: number;
+  readonly fastestTickMs: number;
   readonly bestFoodInRun: number;
   readonly recordsBroken: number;
   readonly collectedByRarity: RarityCounts;
@@ -53,6 +56,7 @@ export type CompletedRun = Readonly<
     | "experience"
     | "evolutionId"
     | "elapsedMs"
+    | "fastestTickMs"
     | "collectedByRarity"
   >
 >;
@@ -77,6 +81,7 @@ export interface EvolutionProgress {
 export interface PlayerStats {
   readonly averageScore: number;
   readonly averageDurationMs: number;
+  readonly averageExperience: number;
   readonly commonCollected: number;
   readonly rareCollected: number;
   readonly legendaryCollected: number;
@@ -172,6 +177,9 @@ function createEmptyMetrics(): PlayerMetrics {
     measuredGames: 0,
     totalScore: 0,
     totalDurationMs: 0,
+    totalExperience: 0,
+    bestExperience: 0,
+    fastestTickMs: 0,
     bestFoodInRun: 0,
     recordsBroken: 0,
     collectedByRarity: emptyRarityCounts(),
@@ -208,6 +216,9 @@ function normalizeProgress(progress: PlayerProgress): PlayerProgress {
     measuredGames: safeNonNegativeInteger(progress.metrics.measuredGames),
     totalScore: safeNonNegativeInteger(progress.metrics.totalScore),
     totalDurationMs: safeNonNegativeInteger(progress.metrics.totalDurationMs),
+    totalExperience: safeNonNegativeInteger(progress.metrics.totalExperience),
+    bestExperience: safeNonNegativeInteger(progress.metrics.bestExperience),
+    fastestTickMs: safeNonNegativeInteger(progress.metrics.fastestTickMs),
     bestFoodInRun: safeNonNegativeInteger(progress.metrics.bestFoodInRun),
     recordsBroken: safeNonNegativeInteger(progress.metrics.recordsBroken),
     collectedByRarity: parseRarityCounts(progress.metrics.collectedByRarity),
@@ -268,13 +279,18 @@ function migrateVersionOne(parsed: Record<string, unknown>): PlayerProgress {
   return normalizeProgress(migrated);
 }
 
-function parseVersionTwo(parsed: Record<string, unknown>): PlayerProgress {
+function parseVersionTwoOrThree(
+  parsed: Record<string, unknown>,
+): PlayerProgress {
   const initial = createInitialPlayerProgress();
   const metricsValue = isRecord(parsed.metrics) ? parsed.metrics : {};
   const metrics: PlayerMetrics = {
     measuredGames: safeNonNegativeInteger(metricsValue.measuredGames),
     totalScore: safeNonNegativeInteger(metricsValue.totalScore),
     totalDurationMs: safeNonNegativeInteger(metricsValue.totalDurationMs),
+    totalExperience: safeNonNegativeInteger(metricsValue.totalExperience),
+    bestExperience: safeNonNegativeInteger(metricsValue.bestExperience),
+    fastestTickMs: safeNonNegativeInteger(metricsValue.fastestTickMs),
     bestFoodInRun: safeNonNegativeInteger(metricsValue.bestFoodInRun),
     recordsBroken: safeNonNegativeInteger(metricsValue.recordsBroken),
     collectedByRarity: parseRarityCounts(metricsValue.collectedByRarity),
@@ -313,8 +329,8 @@ export function parsePlayerProgress(
     const parsed: unknown = JSON.parse(serialized);
     if (!isRecord(parsed)) return fallback;
     if (parsed.version === 1) return migrateVersionOne(parsed);
-    if (parsed.version === PLAYER_PROGRESS_VERSION)
-      return parseVersionTwo(parsed);
+    if (parsed.version === 2 || parsed.version === PLAYER_PROGRESS_VERSION)
+      return parseVersionTwoOrThree(parsed);
     return fallback;
   } catch {
     return fallback;
@@ -333,6 +349,8 @@ export function completeRun(
   const score = safeNonNegativeInteger(run.score);
   const eaten = safeNonNegativeInteger(run.eaten);
   const elapsedMs = safeNonNegativeInteger(run.elapsedMs);
+  const experience = safeNonNegativeInteger(run.experience);
+  const fastestTickMs = safeNonNegativeInteger(run.fastestTickMs);
   const runEvolutionId = isEvolutionId(run.evolutionId)
     ? run.evolutionId
     : EVOLUTIONS[0]!.id;
@@ -369,6 +387,14 @@ export function completeRun(
     measuredGames: safeAdd(current.metrics.measuredGames, 1),
     totalScore: safeAdd(current.metrics.totalScore, score),
     totalDurationMs: safeAdd(current.metrics.totalDurationMs, elapsedMs),
+    totalExperience: safeAdd(current.metrics.totalExperience, experience),
+    bestExperience: Math.max(current.metrics.bestExperience, experience),
+    fastestTickMs:
+      current.metrics.fastestTickMs === 0
+        ? fastestTickMs
+        : fastestTickMs === 0
+          ? current.metrics.fastestTickMs
+          : Math.min(current.metrics.fastestTickMs, fastestTickMs),
     bestFoodInRun: Math.max(current.metrics.bestFoodInRun, eaten),
     recordsBroken: safeAdd(current.metrics.recordsBroken, isNewRecord ? 1 : 0),
     collectedByRarity,
@@ -429,6 +455,10 @@ export function getPlayerStats(progressValue: PlayerProgress): PlayerStats {
     averageDurationMs:
       measuredGames > 0
         ? Math.round(progress.metrics.totalDurationMs / measuredGames)
+        : 0,
+    averageExperience:
+      measuredGames > 0
+        ? Math.round(progress.metrics.totalExperience / measuredGames)
         : 0,
     commonCollected: progress.metrics.collectedByRarity.normal,
     rareCollected: progress.metrics.collectedByRarity.rare,

@@ -14,7 +14,7 @@ import {
 const emptyRarities = { normal: 0, rare: 0, legendary: 0 } as const;
 
 describe("persistencia versionada del progreso local", () => {
-  it("crea el esquema v2 sin identificadores personales", () => {
+  it("crea el esquema v3 sin identificadores personales", () => {
     const progress = createInitialPlayerProgress();
 
     expect(progress).toMatchObject({
@@ -28,6 +28,9 @@ describe("persistencia versionada del progreso local", () => {
         measuredGames: 0,
         totalScore: 0,
         totalDurationMs: 0,
+        totalExperience: 0,
+        bestExperience: 0,
+        fastestTickMs: 0,
         bestFoodInRun: 0,
         recordsBroken: 0,
         collectedByRarity: emptyRarities,
@@ -50,7 +53,7 @@ describe("persistencia versionada del progreso local", () => {
     );
 
     expect(migrated).toMatchObject({
-      version: 2,
+      version: 3,
       bestScore: 420,
       gamesPlayed: 7,
       totalFood: 54,
@@ -111,6 +114,7 @@ describe("persistencia versionada del progreso local", () => {
       evolutionId: "gusano-legendario",
       elapsedMs: 12_500,
       collectedByRarity: { normal: 1, rare: 1, legendary: 1 },
+      fastestTickMs: 132,
     }).progress;
 
     expect(parsePlayerProgress(serializePlayerProgress(completed))).toEqual(
@@ -128,6 +132,7 @@ describe("registro y métricas de sesiones", () => {
       evolutionId: "serpiente-influencer",
       elapsedMs: 91_000,
       collectedByRarity: { normal: 8, rare: 3, legendary: 1 },
+      fastestTickMs: 118,
     });
 
     expect(update.isNewRecord).toBe(true);
@@ -142,6 +147,9 @@ describe("registro y métricas de sesiones", () => {
         measuredGames: 1,
         totalScore: 360,
         totalDurationMs: 91_000,
+        totalExperience: 24,
+        bestExperience: 24,
+        fastestTickMs: 118,
         bestFoodInRun: 12,
         recordsBroken: 1,
         collectedByRarity: { normal: 8, rare: 3, legendary: 1 },
@@ -174,12 +182,14 @@ describe("registro y métricas de sesiones", () => {
       evolutionId: "mini-bicho",
       elapsedMs: 20_000,
       collectedByRarity: { normal: 2, rare: 0, legendary: 0 },
+      fastestTickMs: 163,
     }).progress;
 
     expect(next.gamesPlayed).toBe(9);
     expect(getPlayerStats(next)).toMatchObject({
       averageScore: 100,
       averageDurationMs: 20_000,
+      averageExperience: 4,
       commonCollected: 2,
       rareCollected: 0,
       legendaryCollected: 0,
@@ -194,6 +204,7 @@ describe("registro y métricas de sesiones", () => {
       evolutionId: "gusano-legendario",
       elapsedMs: 30_000,
       collectedByRarity: { normal: 3, rare: 1, legendary: 0 },
+      fastestTickMs: 150,
     });
     const second = completeRun(first.progress, {
       score: 100,
@@ -202,6 +213,7 @@ describe("registro y métricas de sesiones", () => {
       evolutionId: "mini-bicho",
       elapsedMs: 10_000,
       collectedByRarity: { normal: 1, rare: 0, legendary: 0 },
+      fastestTickMs: 160,
     });
 
     expect(second.progress.bestScore).toBe(200);
@@ -210,6 +222,7 @@ describe("registro y métricas de sesiones", () => {
     expect(getPlayerStats(second.progress)).toMatchObject({
       averageScore: 150,
       averageDurationMs: 20_000,
+      averageExperience: 5,
     });
     expect(new Set(second.progress.unlockedAchievementIds).size).toBe(
       second.progress.unlockedAchievementIds.length,
@@ -224,6 +237,7 @@ describe("registro y métricas de sesiones", () => {
       evolutionId: "mini-bicho",
       elapsedMs: 1_000,
       collectedByRarity: emptyRarities,
+      fastestTickMs: 165,
     });
     expect(progress.gamesPlayed).toBe(1);
   });
@@ -233,10 +247,10 @@ describe("barra de evolución", () => {
   it.each([
     [0, "mini-bicho", "gusano-legendario", 0, 8, 0],
     [4, "mini-bicho", "gusano-legendario", 4, 8, 50],
-    [8, "gusano-legendario", "serpiente-influencer", 0, 12, 0],
-    [19, "gusano-legendario", "serpiente-influencer", 11, 12, 91],
-    [38, "monstruo-meme", "dios-del-caos", 0, 24, 0],
-    [61, "monstruo-meme", "dios-del-caos", 23, 24, 95],
+    [8, "gusano-legendario", "serpiente-influencer", 0, 14, 0],
+    [21, "gusano-legendario", "serpiente-influencer", 13, 14, 92],
+    [42, "monstruo-meme", "dios-del-caos", 0, 28, 0],
+    [69, "monstruo-meme", "dios-del-caos", 27, 28, 96],
   ] as const)(
     "calcula el tramo para %i XP",
     (
@@ -259,7 +273,7 @@ describe("barra de evolución", () => {
   );
 
   it("queda al 100 % al alcanzar la evolución máxima", () => {
-    expect(getEvolutionProgress(62)).toMatchObject({
+    expect(getEvolutionProgress(70)).toMatchObject({
       current: { id: "dios-del-caos" },
       next: null,
       experienceRequired: 0,

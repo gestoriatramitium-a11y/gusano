@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { SynthAudio } from "./audio/SynthAudio";
+import { DebugPanel } from "./components/DebugPanel";
 import { GameCanvas, type GameController } from "./components/GameCanvas";
+import { OnboardingOverlay } from "./components/OnboardingOverlay";
 import { ProgressPanel } from "./components/ProgressPanel";
 import { ResultScreen } from "./components/ResultScreen";
+import { SettingsPanel } from "./components/SettingsPanel";
 import { ACHIEVEMENT_CATALOG, MISSION_CATALOG } from "./core/challenges";
 import {
   EVOLUTIONS,
@@ -22,6 +25,16 @@ import {
   type PlayerProgress,
 } from "./core/progress";
 import {
+  DEFAULT_PLAYER_PREFERENCES,
+  parsePlayerPreferences,
+  resolveGraphicsQuality,
+  serializePlayerPreferences,
+  shouldReduceMotion,
+  type EffectiveGraphicsQuality,
+  type GraphicsQualityPreference,
+  type PlayerPreferences,
+} from "./core/preferences";
+import {
   createShareText,
   formatDuration,
   selectResultPhrase,
@@ -31,7 +44,9 @@ import { shareResultText } from "./utils/shareResult";
 
 const LEGACY_BEST_SCORE_KEY = "meme-evolution-snake:best-score";
 const PREVIOUS_PLAYER_PROGRESS_KEY = "meme-evolution-snake:player-progress:v1";
-const PLAYER_PROGRESS_KEY = "meme-evolution-snake:player-progress:v2";
+const SECOND_PLAYER_PROGRESS_KEY = "meme-evolution-snake:player-progress:v2";
+const PLAYER_PROGRESS_KEY = "meme-evolution-snake:player-progress:v3";
+const PLAYER_PREFERENCES_KEY = "meme-evolution-snake:preferences:v1";
 
 const EAT_MESSAGES = [
   "¡Ese meme estaba delicioso!",
@@ -40,7 +55,7 @@ const EAT_MESSAGES = [
   "¡ÑAM! La ciencia no puede explicarlo.",
 ] as const;
 
-type Screen = "start" | "playing" | "game-over";
+type Screen = "start" | "onboarding" | "playing" | "game-over";
 
 interface UnlockNotice {
   readonly id: string;
@@ -52,12 +67,48 @@ function readPlayerProgress(): PlayerProgress {
   try {
     return parsePlayerProgress(
       localStorage.getItem(PLAYER_PROGRESS_KEY) ??
+        localStorage.getItem(SECOND_PLAYER_PROGRESS_KEY) ??
         localStorage.getItem(PREVIOUS_PLAYER_PROGRESS_KEY),
       localStorage.getItem(LEGACY_BEST_SCORE_KEY),
     );
   } catch {
     return createInitialPlayerProgress();
   }
+}
+
+function readPlayerPreferences(): PlayerPreferences {
+  try {
+    return parsePlayerPreferences(localStorage.getItem(PLAYER_PREFERENCES_KEY));
+  } catch {
+    return DEFAULT_PLAYER_PREFERENCES;
+  }
+}
+
+function storePlayerPreferences(preferences: PlayerPreferences): void {
+  try {
+    localStorage.setItem(
+      PLAYER_PREFERENCES_KEY,
+      serializePlayerPreferences(preferences),
+    );
+  } catch {
+    // Las preferencias siguen activas durante la sesión.
+  }
+}
+
+function detectGraphicsQuality(
+  preference: GraphicsQualityPreference,
+): EffectiveGraphicsQuality {
+  const navigatorWithMemory = navigator as Navigator & {
+    readonly deviceMemory?: number;
+  };
+  return resolveGraphicsQuality(preference, {
+    hardwareConcurrency: navigator.hardwareConcurrency,
+    ...(typeof navigatorWithMemory.deviceMemory === "number"
+      ? { deviceMemoryGb: navigatorWithMemory.deviceMemory }
+      : {}),
+    devicePixelRatio: window.devicePixelRatio,
+    coarsePointer: window.matchMedia("(pointer: coarse)").matches,
+  });
 }
 
 function storePlayerProgress(progress: PlayerProgress): void {
@@ -78,6 +129,8 @@ function effectLabel(effect: TimedEffectKind): string {
 
 export function App() {
   const [controller, setController] = useState<GameController | null>(null);
+  const [engineRequested, setEngineRequested] = useState(false);
+  const [engineError, setEngineError] = useState(false);
   const [snapshot, setSnapshot] = useState<GameSnapshot | null>(null);
   const [screen, setScreen] = useState<Screen>("start");
   const [progress, setProgress] = useState(readPlayerProgress);
@@ -86,6 +139,14 @@ export function App() {
   const [sharePreview, setSharePreview] = useState("");
   const [copyStatus, setCopyStatus] = useState("");
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [preferences, setPreferences] = useState(readPlayerPreferences);
+  const [systemReducedMotion, setSystemReducedMotion] = useState(
+    () => window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+  );
+  const [effectiveQuality, setEffectiveQuality] =
+    useState<EffectiveGraphicsQuality>(() =>
+      detectGraphicsQuality(readPlayerPreferences().graphicsQuality),
+    );
   const [isNewRecord, setIsNewRecord] = useState(false);
   const [previousBestScore, setPreviousBestScore] = useState(
     progress.bestScore,
@@ -96,6 +157,7 @@ export function App() {
   const announcementTimer = useRef<number | null>(null);
   const celebrationTimer = useRef<number | null>(null);
   const runRecorded = useRef(false);
+  const pendingStart = useRef(false);
   const progressRef = useRef(progress);
   const audio = useRef<SynthAudio | null>(null);
 
@@ -109,6 +171,24 @@ export function App() {
     },
     [],
   );
+
+  useEffect(() => {
+    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => setSystemReducedMotion(query.matches);
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+
+  const reduceMotion = shouldReduceMotion(preferences, systemReducedMotion);
+
+  useEffect(() => {
+    storePlayerPreferences(preferences);
+    controller?.setVisualPreferences(
+      preferences.graphicsQuality,
+      effectiveQuality,
+      reduceMotion,
+    );
+  }, [controller, effectiveQuality, preferences, reduceMotion]);
 
   const announce = useCallback((message: string, duration = 1900) => {
     setAnnouncement(message);
@@ -175,7 +255,8 @@ export function App() {
         announce(
           `${baseMessage} +${event.points}${event.multiplier > 1 ? " x2" : ""} · +${event.experience} XP`,
         );
-        navigator.vibrate?.(event.rarity === "legendary" ? [55, 25, 90] : 35);
+        if (!reduceMotion)
+          navigator.vibrate?.(event.rarity === "legendary" ? [55, 25, 90] : 35);
       } else if (event.type === "effect-started") {
         announce(
           event.effect === "speed-boost"
@@ -196,37 +277,68 @@ export function App() {
         const name = nextEvolution?.name ?? "Poder meme desbloqueado";
         setCelebration(name);
         audio.current?.playEvolution();
-        navigator.vibrate?.([45, 30, 70]);
+        if (!reduceMotion) navigator.vibrate?.([45, 30, 70]);
         if (celebrationTimer.current !== null)
           window.clearTimeout(celebrationTimer.current);
         celebrationTimer.current = window.setTimeout(
           () => setCelebration(null),
-          900,
+          reduceMotion ? 180 : 900,
         );
       } else if (event.type === "game-over") {
         audio.current?.playGameOver();
-        navigator.vibrate?.([90, 45, 120]);
+        if (!reduceMotion) navigator.vibrate?.([90, 45, 120]);
       }
     },
-    [announce],
+    [announce, reduceMotion],
   );
 
-  const startGame = useCallback(() => {
+  const beginRun = useCallback(
+    (gameController: GameController) => {
+      audio.current ??= new SynthAudio();
+      audio.current.setMuted(!soundEnabled);
+      void audio.current.unlock();
+      runRecorded.current = false;
+      setPreviousBestScore(progressRef.current.bestScore);
+      setIsNewRecord(false);
+      setUnlockNotices([]);
+      setAnnouncement("");
+      setCelebration(null);
+      setSharePreview("");
+      setCopyStatus("");
+      setScreen("playing");
+      gameController.startRun();
+    },
+    [soundEnabled],
+  );
+
+  useEffect(() => {
+    if (!controller || !pendingStart.current) return;
+    pendingStart.current = false;
+    beginRun(controller);
+  }, [beginRun, controller]);
+
+  const requestStart = useCallback(() => {
+    setEngineError(false);
+    setEngineRequested(true);
+    if (!preferences.tutorialSeen) {
+      setScreen("onboarding");
+      return;
+    }
+    if (controller) beginRun(controller);
+    else pendingStart.current = true;
+  }, [beginRun, controller, preferences.tutorialSeen]);
+
+  const completeOnboarding = useCallback(() => {
     if (!controller) return;
-    audio.current ??= new SynthAudio();
-    audio.current.setMuted(!soundEnabled);
-    void audio.current.unlock();
-    runRecorded.current = false;
-    setPreviousBestScore(progressRef.current.bestScore);
-    setIsNewRecord(false);
-    setUnlockNotices([]);
-    setAnnouncement("");
-    setCelebration(null);
-    setSharePreview("");
-    setCopyStatus("");
-    setScreen("playing");
-    controller.startRun();
-  }, [controller, soundEnabled]);
+    setPreferences((current) => ({ ...current, tutorialSeen: true }));
+    beginRun(controller);
+  }, [beginRun, controller]);
+
+  const showTutorial = useCallback(() => {
+    pendingStart.current = false;
+    setEngineRequested(true);
+    setScreen("onboarding");
+  }, []);
 
   const changeDirection = useCallback(
     (direction: Direction) => controller?.changeDirection(direction),
@@ -294,9 +406,15 @@ export function App() {
         : null,
     [isNewRecord, previousBestScore, snapshot],
   );
+  const debugEnabled =
+    import.meta.env.DEV &&
+    new URLSearchParams(window.location.search).get("debug") === "1";
 
   return (
-    <main className="app-shell">
+    <main
+      className="app-shell"
+      data-reduce-motion={reduceMotion ? "true" : "false"}
+    >
       <div className="game-layout">
         <section className="game-card" aria-label="Meme Evolution Snake">
           <header className="game-header">
@@ -318,9 +436,9 @@ export function App() {
               >
                 {soundEnabled ? "🔊" : "🔇"}
               </button>
-              <span className="status-pill">
+              <span className="status-pill" data-testid="quality-indicator">
                 {screen === "playing"
-                  ? `Caos ${Math.min(99, (snapshot?.difficultyLevel ?? 0) + 1)}`
+                  ? `Caos ${Math.min(99, (snapshot?.difficultyLevel ?? 0) + 1)} · ${effectiveQuality === "reduced" ? "Eco" : "Normal"}`
                   : "Modo local"}
               </span>
             </div>
@@ -393,11 +511,26 @@ export function App() {
             )}
 
           <div className="play-area">
-            <GameCanvas
-              onController={handleController}
-              onEvent={handleEvent}
-              onSnapshot={handleSnapshot}
-            />
+            {engineRequested ? (
+              <GameCanvas
+                onController={handleController}
+                onEvent={handleEvent}
+                onSnapshot={handleSnapshot}
+                onQualityChange={setEffectiveQuality}
+                onLoadError={() => setEngineError(true)}
+                qualityPreference={preferences.graphicsQuality}
+                effectiveQuality={effectiveQuality}
+                reduceMotion={reduceMotion}
+              />
+            ) : (
+              <div className="canvas-shell canvas-shell--deferred" />
+            )}
+
+            <p className="sr-only" id="game-instructions">
+              Controla la serpiente con flechas o WASD. En móvil, desliza o usa
+              los cuatro botones. Recoge memes para ganar puntos y experiencia;
+              evita las paredes y tu propio cuerpo.
+            </p>
 
             {announcement && screen === "playing" && (
               <div
@@ -443,20 +576,54 @@ export function App() {
                     <button
                       className="primary-button"
                       type="button"
-                      onClick={startGame}
-                      disabled={!controller}
+                      onClick={requestStart}
+                      disabled={engineError}
                       data-testid="start-button"
                     >
-                      Jugar
+                      {engineRequested && !controller
+                        ? "Preparando…"
+                        : engineError
+                          ? "Error al cargar"
+                          : "Jugar"}
                     </button>
                     <p className="hint">
                       WASD / flechas · desliza o usa los controles táctiles
                     </p>
                   </div>
 
-                  <ProgressPanel progress={progress} />
+                  <div className="menu-side">
+                    <ProgressPanel progress={progress} />
+                    <SettingsPanel
+                      preferences={preferences}
+                      effectiveQuality={effectiveQuality}
+                      systemReducedMotion={systemReducedMotion}
+                      onQualityChange={(graphicsQuality) => {
+                        setPreferences((current) => ({
+                          ...current,
+                          graphicsQuality,
+                        }));
+                        setEffectiveQuality(
+                          detectGraphicsQuality(graphicsQuality),
+                        );
+                      }}
+                      onReduceMotionChange={(reduce) =>
+                        setPreferences((current) => ({
+                          ...current,
+                          reduceMotion: reduce,
+                        }))
+                      }
+                      onShowTutorial={showTutorial}
+                    />
+                  </div>
                 </div>
               </div>
+            )}
+
+            {screen === "onboarding" && (
+              <OnboardingOverlay
+                engineReady={controller !== null}
+                onComplete={completeOnboarding}
+              />
             )}
 
             {screen === "game-over" && snapshot && resultPhrase && (
@@ -468,7 +635,7 @@ export function App() {
                 isNewRecord={isNewRecord}
                 sharePreview={sharePreview}
                 shareStatus={copyStatus}
-                onRestart={startGame}
+                onRestart={requestStart}
                 onShare={() => void copyResult()}
               />
             )}
@@ -538,6 +705,9 @@ export function App() {
           <p className="sr-only" aria-live="polite">
             {announcement || copyStatus}
           </p>
+          {debugEnabled && (
+            <DebugPanel snapshot={snapshot} quality={effectiveQuality} />
+          )}
         </section>
       </div>
     </main>

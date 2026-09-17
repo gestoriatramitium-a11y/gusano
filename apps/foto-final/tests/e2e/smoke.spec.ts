@@ -46,6 +46,16 @@ async function turnUp(page: Page, isMobile: boolean): Promise<void> {
   }
 }
 
+async function startGame(page: Page): Promise<void> {
+  await page.getByTestId("start-button").click();
+  const onboarding = page.getByTestId("onboarding");
+  if (await onboarding.isVisible()) {
+    await expect(onboarding).toContainText("Come memes");
+    await page.getByTestId("onboarding-start").click();
+  }
+  await expect(page.getByTestId("start-screen")).toBeHidden();
+}
+
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     const resetMarker = "meme-evolution-snake:e2e-reset";
@@ -75,6 +85,14 @@ test("completa, comparte y conserva una partida local", async ({
     "0",
   );
   await expect(page.getByTestId("stats-games")).toHaveText("0");
+  await expect(page.locator(".canvas-shell canvas")).toHaveCount(0);
+  expect(
+    await page.evaluate(() =>
+      performance
+        .getEntriesByType("resource")
+        .some((entry) => entry.name.includes("phaser-")),
+    ),
+  ).toBe(false);
   expect(
     await page.evaluate("document.documentElement.scrollWidth <= innerWidth"),
   ).toBe(true);
@@ -88,10 +106,18 @@ test("completa, comparte y conserva una partida local", async ({
     viewport!.height,
   );
 
-  await startButton.click();
+  await startGame(page);
   await expect(page.getByTestId("hud")).toBeVisible();
 
   const isMobile = testInfo.project.name === "chromium-mobile";
+  if (isMobile) {
+    const touchTargets = await page.locator(".touch-button").all();
+    for (const target of touchTargets) {
+      const bounds = await target.boundingBox();
+      expect(bounds?.width).toBeGreaterThanOrEqual(44);
+      expect(bounds?.height).toBeGreaterThanOrEqual(44);
+    }
+  }
   await turnUp(page, isMobile);
 
   const gameOver = page.getByTestId("game-over");
@@ -124,7 +150,7 @@ test("muestra feedback inmediato y activa el turbo de Café infinito", async ({
 }) => {
   const runtime = watchRuntime(page);
   await page.goto(`/?seed=${findReachableFoodSeed("infinite-coffee")}`);
-  await page.getByTestId("start-button").click();
+  await startGame(page);
 
   await expect(page.locator(".effect-chip--speed-boost")).toBeVisible({
     timeout: 5_000,
@@ -145,7 +171,7 @@ test("evoluciona, desbloquea progreso y lo conserva", async ({
 }, testInfo) => {
   const runtime = watchRuntime(page);
   await page.goto(`/?seed=${findReachableFoodSeed("legendary-potato")}`);
-  await page.getByTestId("start-button").click();
+  await startGame(page);
 
   await expect(page.getByTestId("evolution-celebration")).toContainText(
     "Gusano Legendario",
@@ -173,6 +199,33 @@ test("evoluciona, desbloquea progreso y lo conserva", async ({
   );
   await expect(page.locator('[data-achievement-id="first-bite"]')).toHaveClass(
     /achievement--unlocked/,
+  );
+
+  expect(runtime.consoleErrors).toEqual([]);
+  expect(runtime.pageErrors).toEqual([]);
+  expect([...runtime.externalRequests]).toEqual([]);
+});
+
+test("persiste calidad reducida y reducción de movimiento", async ({
+  page,
+}) => {
+  const runtime = watchRuntime(page);
+  await page.goto("/");
+
+  await page.getByTestId("quality-select").selectOption("reduced");
+  await page.getByTestId("reduce-motion-toggle").check();
+  await expect(page.locator("main")).toHaveAttribute(
+    "data-reduce-motion",
+    "true",
+  );
+  await page.reload();
+  await expect(page.getByTestId("quality-select")).toHaveValue("reduced");
+  await expect(page.getByTestId("reduce-motion-toggle")).toBeChecked();
+
+  await startGame(page);
+  await expect(page.locator(".canvas-shell")).toHaveAttribute(
+    "data-quality",
+    "reduced",
   );
 
   expect(runtime.consoleErrors).toEqual([]);

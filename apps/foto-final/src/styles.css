@@ -42,9 +42,15 @@ button {
   font: inherit;
 }
 
-button:focus-visible {
+:is(button, select, input, summary):focus-visible {
   outline: 3px solid var(--lime);
   outline-offset: 4px;
+}
+
+.canvas-shell--deferred {
+  background:
+    radial-gradient(circle at 50% 50%, rgb(124 60 255 / 20%), transparent 45%),
+    #100a28;
 }
 
 .app-shell {
@@ -343,6 +349,12 @@ button:focus-visible {
   width: 100%;
 }
 
+.menu-side {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+}
+
 .local-progress {
   padding: 20px;
   text-align: left;
@@ -350,6 +362,177 @@ button:focus-visible {
   border: 1px solid rgb(255 255 255 / 16%);
   border-radius: 22px;
   box-shadow: 0 22px 46px rgb(0 0 0 / 30%);
+}
+
+.settings-panel {
+  padding: 13px 15px;
+  color: #fff;
+  background: rgb(20 12 50 / 88%);
+  border: 1px solid rgb(255 255 255 / 16%);
+  border-radius: 16px;
+  text-align: left;
+}
+
+.settings-panel__heading,
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-panel__heading h3 {
+  margin: 0;
+  color: var(--lime);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.settings-panel__heading button {
+  min-height: 36px;
+  padding: 5px 10px;
+  color: #fff;
+  background: rgb(124 60 255 / 30%);
+  border: 1px solid rgb(255 255 255 / 28%);
+  border-radius: 9px;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.setting-row {
+  min-height: 44px;
+  margin-top: 8px;
+  color: #f7f7ff;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.setting-row span,
+.setting-row small {
+  display: block;
+}
+
+.setting-row small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 650;
+}
+
+.setting-row select {
+  min-width: 112px;
+  min-height: 40px;
+  padding: 6px 28px 6px 9px;
+  color: #fff;
+  background: #211447;
+  border: 1px solid rgb(255 255 255 / 34%);
+  border-radius: 9px;
+  cursor: pointer;
+}
+
+.setting-row input {
+  width: 24px;
+  height: 24px;
+  accent-color: var(--lime);
+}
+
+.screen-overlay--onboarding {
+  position: fixed;
+  z-index: 25;
+  min-height: 100dvh;
+  max-height: 100dvh;
+}
+
+.onboarding-card {
+  width: min(100%, 560px);
+  padding: clamp(20px, 4vw, 34px);
+  background: rgb(19 11 47 / 96%);
+  border: 1px solid rgb(255 255 255 / 22%);
+  border-radius: 24px;
+  box-shadow: 0 30px 80px rgb(0 0 0 / 52%);
+  text-align: center;
+}
+
+.onboarding-card h2 {
+  margin: 0 0 18px;
+  color: #fff;
+  font-size: clamp(1.8rem, 6vw, 3rem);
+  letter-spacing: -0.05em;
+  text-transform: uppercase;
+}
+
+.onboarding-steps {
+  display: grid;
+  padding: 0;
+  margin: 0;
+  gap: 8px;
+  list-style: none;
+  text-align: left;
+}
+
+.onboarding-steps li {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  align-items: center;
+  gap: 10px;
+  min-height: 58px;
+  padding: 9px 11px;
+  background: rgb(255 255 255 / 6%);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.onboarding-steps li > span {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  color: #170d30;
+  background: var(--lime);
+  border-radius: 11px;
+  font-size: 1.35rem;
+  font-weight: 950;
+  place-items: center;
+}
+
+.onboarding-steps strong,
+.onboarding-steps p {
+  display: block;
+  margin: 0;
+}
+
+.onboarding-steps p,
+.onboarding-goal {
+  color: #d7d1ed;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.onboarding-goal {
+  margin: 14px 0;
+  color: var(--lime);
+  font-weight: 800;
+}
+
+.debug-panel {
+  position: fixed;
+  z-index: 40;
+  right: 10px;
+  bottom: 10px;
+  display: grid;
+  min-width: 220px;
+  padding: 10px;
+  color: #d7ff8a;
+  background: rgb(3 3 8 / 90%);
+  border: 1px solid #bcff2c;
+  border-radius: 8px;
+  font: 600 12px/1.4 monospace;
+  pointer-events: none;
+}
+
+.debug-panel strong {
+  color: #fff;
 }
 
 .panel-kicker {
@@ -1234,6 +1417,24 @@ button:focus-visible {
     border-radius: 17px;
   }
 
+  .settings-panel {
+    margin-top: 10px;
+  }
+
+  .onboarding-card {
+    padding: 15px;
+    border-radius: 18px;
+  }
+
+  .onboarding-card h2 {
+    margin-bottom: 10px;
+  }
+
+  .onboarding-steps li {
+    min-height: 52px;
+    padding: 7px 9px;
+  }
+
   .logo {
     font-size: clamp(2rem, 11vw, 3rem);
   }
@@ -1418,4 +1619,13 @@ button:focus-visible {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+.app-shell[data-reduce-motion="true"] *,
+.app-shell[data-reduce-motion="true"] *::before,
+.app-shell[data-reduce-motion="true"] *::after {
+  scroll-behavior: auto !important;
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
 }

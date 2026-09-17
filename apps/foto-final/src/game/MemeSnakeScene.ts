@@ -18,10 +18,21 @@ import {
   type GameState,
   type Position,
 } from "../core/game";
+import type {
+  EffectiveGraphicsQuality,
+  GraphicsQualityPreference,
+} from "../core/preferences";
 
 interface SceneCallbacks {
   onEvent(event: GameEvent): void;
   onSnapshot(snapshot: GameSnapshot): void;
+  onQualityChange(quality: EffectiveGraphicsQuality): void;
+}
+
+interface SceneOptions extends SceneCallbacks {
+  readonly qualityPreference: GraphicsQualityPreference;
+  readonly initialQuality: EffectiveGraphicsQuality;
+  readonly reduceMotion: boolean;
 }
 
 interface BoardMetrics {
@@ -44,9 +55,9 @@ const FOOD_GLYPHS: Readonly<Record<FoodKind, string>> = {
 };
 
 const RARITY_LABELS: Readonly<Record<FoodRarity, string>> = {
-  normal: "",
-  rare: "RARA",
-  legendary: "LEGENDARIA",
+  normal: "● COMÚN",
+  rare: "◆ RARA",
+  legendary: "★ LEGENDARIA",
 };
 
 const KEY_TO_DIRECTION: Readonly<Record<string, Direction>> = {
@@ -84,10 +95,18 @@ export class MemeSnakeScene extends Phaser.Scene {
   private pointerStart: Position | null = null;
   private pausedUntil = 0;
   private eatPulseUntil = 0;
+  private qualityPreference: GraphicsQualityPreference;
+  private effectiveQuality: EffectiveGraphicsQuality;
+  private reduceMotion: boolean;
+  private frameTimeTotal = 0;
+  private frameSampleCount = 0;
 
-  constructor(callbacks: SceneCallbacks) {
+  constructor(options: SceneOptions) {
     super({ key: "meme-snake" });
-    this.callbacks = callbacks;
+    this.callbacks = options;
+    this.qualityPreference = options.qualityPreference;
+    this.effectiveQuality = options.initialQuality;
+    this.reduceMotion = options.reduceMotion;
   }
 
   create(): void {
@@ -146,6 +165,7 @@ export class MemeSnakeScene extends Phaser.Scene {
   }
 
   update(time: number, delta: number): void {
+    this.assessPerformance(delta);
     if (this.state.status !== "playing") {
       this.renderDynamic(1, time);
       return;
@@ -213,6 +233,40 @@ export class MemeSnakeScene extends Phaser.Scene {
     }
   }
 
+  setVisualPreferences(
+    qualityPreference: GraphicsQualityPreference,
+    effectiveQuality: EffectiveGraphicsQuality,
+    reduceMotion: boolean,
+  ): void {
+    this.qualityPreference = qualityPreference;
+    this.effectiveQuality = effectiveQuality;
+    this.reduceMotion = reduceMotion;
+    this.frameTimeTotal = 0;
+    this.frameSampleCount = 0;
+    this.callbacks.onQualityChange(effectiveQuality);
+  }
+
+  private assessPerformance(delta: number): void {
+    if (
+      this.qualityPreference !== "auto" ||
+      this.effectiveQuality === "reduced" ||
+      delta <= 0 ||
+      delta > 250
+    ) {
+      return;
+    }
+    this.frameTimeTotal += delta;
+    this.frameSampleCount += 1;
+    if (this.frameSampleCount < 120) return;
+    const averageFrameMs = this.frameTimeTotal / this.frameSampleCount;
+    this.frameTimeTotal = 0;
+    this.frameSampleCount = 0;
+    if (averageFrameMs > 22) {
+      this.effectiveQuality = "reduced";
+      this.callbacks.onQualityChange("reduced");
+    }
+  }
+
   private handleEvents(events: readonly GameEvent[], time: number): void {
     for (const event of events) {
       this.callbacks.onEvent(event);
@@ -227,24 +281,29 @@ export class MemeSnakeScene extends Phaser.Scene {
           event.rarity === "legendary" ? "#fff45f" : "#ffffff",
         );
         this.eatPulseUntil = time + 190;
-        this.cameras.main.shake(
-          event.rarity === "legendary" ? 150 : 70,
-          0.0028,
-        );
-        if (event.rarity === "legendary") {
+        if (!this.reduceMotion) {
+          this.cameras.main.shake(
+            event.rarity === "legendary" ? 150 : 70,
+            0.0028,
+          );
+        }
+        if (event.rarity === "legendary" && !this.reduceMotion) {
           this.cameras.main.flash(220, 255, 216, 61, false);
         }
       } else if (event.type === "evolved") {
         const evolution = EVOLUTIONS.find(
           (candidate) => candidate.id === event.to,
         );
-        this.pausedUntil = time + 620;
-        this.cameras.main.flash(330, 188, 255, 44, false);
+        this.pausedUntil = time + (this.reduceMotion ? 120 : 620);
+        if (!this.reduceMotion)
+          this.cameras.main.flash(330, 188, 255, 44, false);
         if (evolution)
           this.createBurst(this.state.snake[0]!, evolution.accentColor, 22);
       } else if (event.type === "game-over") {
-        this.cameras.main.shake(340, 0.012);
-        this.cameras.main.flash(180, 255, 59, 167, false);
+        if (!this.reduceMotion) {
+          this.cameras.main.shake(340, 0.012);
+          this.cameras.main.flash(180, 255, 59, 167, false);
+        }
       }
     }
   }
@@ -330,18 +389,20 @@ export class MemeSnakeScene extends Phaser.Scene {
     const definition = FOOD_CATALOG[this.state.food.kind];
     const basePoint = this.toPixels(this.state.food.position, metrics);
     const phase = time * 0.006;
-    const pulseAmount =
-      definition.visualEffect === "pulse"
+    const pulseAmount = this.reduceMotion
+      ? 0
+      : definition.visualEffect === "pulse"
         ? 0.1
         : definition.visualEffect === "electric" ||
             definition.visualEffect === "chaos"
           ? 0.075
           : 0.035;
     const pulse = definition.visualScale * (1 + Math.sin(phase) * pulseAmount);
-    const bobAmount =
-      definition.visualEffect === "float" ||
-      definition.visualEffect === "electric" ||
-      definition.visualEffect === "chaos"
+    const bobAmount = this.reduceMotion
+      ? 0
+      : definition.visualEffect === "float" ||
+          definition.visualEffect === "electric" ||
+          definition.visualEffect === "chaos"
         ? 3.2
         : 1.2;
     const point = {
@@ -350,6 +411,13 @@ export class MemeSnakeScene extends Phaser.Scene {
     };
 
     graphics.clear();
+    if (this.state.status === "ready") {
+      const headPoint = this.toPixels(this.state.snake[0]!, metrics);
+      graphics.lineStyle(3, 0xbcff2c, 0.55);
+      graphics.lineBetween(headPoint.x, headPoint.y, point.x, point.y);
+      graphics.lineStyle(4, 0xffffff, 0.9);
+      graphics.strokeCircle(point.x, point.y, metrics.cell * 0.82);
+    }
     graphics.fillStyle(
       definition.color,
       definition.rarity === "legendary" ? 0.28 : 0.17,
@@ -366,8 +434,10 @@ export class MemeSnakeScene extends Phaser.Scene {
       graphics.strokeCircle(point.x, point.y, metrics.cell * 0.69 * pulse);
     }
     if (
-      definition.visualEffect === "electric" ||
-      definition.visualEffect === "chaos"
+      this.effectiveQuality === "normal" &&
+      !this.reduceMotion &&
+      (definition.visualEffect === "electric" ||
+        definition.visualEffect === "chaos")
     ) {
       const sparks = definition.visualEffect === "chaos" ? 5 : 3;
       graphics.fillStyle(definition.color, 0.9);
@@ -380,8 +450,9 @@ export class MemeSnakeScene extends Phaser.Scene {
         );
       }
     }
-    const rotation =
-      definition.visualEffect === "spin"
+    const rotation = this.reduceMotion
+      ? 0
+      : definition.visualEffect === "spin"
         ? phase * 0.16
         : definition.visualEffect === "chaos"
           ? phase * 0.08 + Math.sin(phase * 1.7) * 0.2
@@ -398,7 +469,7 @@ export class MemeSnakeScene extends Phaser.Scene {
     const rarityLabel = RARITY_LABELS[definition.rarity];
     label
       .setText(
-        `${rarityLabel ? `${rarityLabel} · ` : ""}+${definition.points} · +${definition.experience} XP`,
+        `${rarityLabel} · +${definition.points} · +${definition.experience} XP`,
       )
       .setPosition(point.x, point.y - metrics.cell * 0.62)
       .setColor(definition.rarity === "legendary" ? "#fff45f" : "#ffffff")
@@ -435,7 +506,10 @@ export class MemeSnakeScene extends Phaser.Scene {
         x: interpolate(origin.x, target.x, progress),
         y: interpolate(origin.y, target.y, progress),
       };
-      const wobble = index === 0 ? 0 : Math.sin(phase + index * 0.85) * 0.9;
+      const wobble =
+        index === 0 || this.reduceMotion
+          ? 0
+          : Math.sin(phase + index * 0.85) * 0.9;
       const basePoint = this.toPixels(interpolated, metrics);
       const point = { x: basePoint.x, y: basePoint.y + wobble };
       const isHead = index === 0;
@@ -478,7 +552,11 @@ export class MemeSnakeScene extends Phaser.Scene {
         this.renderFace(graphics, point, metrics.cell, evolution.accentColor);
     }
 
-    if (evolution.effect === "sparkles" || evolution.effect === "chaos") {
+    if (
+      this.effectiveQuality === "normal" &&
+      !this.reduceMotion &&
+      (evolution.effect === "sparkles" || evolution.effect === "chaos")
+    ) {
       const head = this.state.snake[0]!;
       const origin = this.previousSnake[0] ?? head;
       const headPoint = this.toPixels(
@@ -531,10 +609,13 @@ export class MemeSnakeScene extends Phaser.Scene {
   }
 
   private createBurst(position: Position, color: number, amount: number): void {
+    if (this.reduceMotion) return;
     const metrics = this.metrics();
     const point = this.toPixels(position, metrics);
-    for (let index = 0; index < amount; index += 1) {
-      const angle = (Math.PI * 2 * index) / amount;
+    const effectiveAmount =
+      this.effectiveQuality === "reduced" ? Math.ceil(amount * 0.45) : amount;
+    for (let index = 0; index < effectiveAmount; index += 1) {
+      const angle = (Math.PI * 2 * index) / effectiveAmount;
       const particle = this.add.circle(point.x, point.y, 4, color, 0.95);
       this.tweens.add({
         targets: particle,
@@ -566,6 +647,10 @@ export class MemeSnakeScene extends Phaser.Scene {
         strokeThickness: 5,
       })
       .setOrigin(0.5);
+    if (this.reduceMotion) {
+      this.time.delayedCall(520, () => label.destroy());
+      return;
+    }
     this.tweens.add({
       targets: label,
       y: label.y - 42,

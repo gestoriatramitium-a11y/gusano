@@ -1,3 +1,9 @@
+import {
+  GAME_BALANCE,
+  type BalanceEvolutionId,
+  type BalanceFoodKind,
+} from "./balance";
+
 export type Direction = "up" | "down" | "left" | "right";
 
 export type GameStatus = "ready" | "playing" | "game-over";
@@ -7,17 +13,7 @@ export interface Position {
   readonly y: number;
 }
 
-export type FoodKind =
-  | "legendary-potato"
-  | "flying-pizza"
-  | "lost-robot"
-  | "angry-emoji"
-  | "sad-sock"
-  | "duck-king"
-  | "cringe-energy"
-  | "influencer-avocado"
-  | "infinite-coffee"
-  | "super-meme";
+export type FoodKind = BalanceFoodKind;
 
 export type FoodRarity = "normal" | "rare" | "legendary";
 
@@ -57,12 +53,7 @@ export interface Food {
   readonly position: Position;
 }
 
-export type EvolutionId =
-  | "mini-bicho"
-  | "gusano-legendario"
-  | "serpiente-influencer"
-  | "monstruo-meme"
-  | "dios-del-caos";
+export type EvolutionId = BalanceEvolutionId;
 
 export interface Evolution {
   readonly id: EvolutionId;
@@ -76,192 +67,19 @@ export interface Evolution {
   readonly effect: "none" | "sparkles" | "glow" | "pulse" | "chaos";
 }
 
-export const FOOD_CATALOG: Readonly<Record<FoodKind, FoodDefinition>> = {
-  "legendary-potato": {
-    kind: "legendary-potato",
-    name: "Patata dorada",
-    rarity: "legendary",
-    weight: 3,
-    points: 120,
-    experience: 8,
-    growth: 4,
-    color: 0xffd83d,
-    visualScale: 1.18,
-    visualEffect: "pulse",
-  },
-  "flying-pizza": {
-    kind: "flying-pizza",
-    name: "Pizza voladora",
-    rarity: "normal",
-    weight: 22,
-    points: 15,
-    experience: 2,
-    growth: 1,
-    color: 0xffc94d,
-    visualScale: 1,
-    visualEffect: "spin",
-  },
-  "lost-robot": {
-    kind: "lost-robot",
-    name: "Robot perdido",
-    rarity: "rare",
-    weight: 8,
-    points: 20,
-    experience: 4,
-    growth: 2,
-    color: 0x90a4ae,
-    visualScale: 1.05,
-    visualEffect: "pulse",
-  },
-  "angry-emoji": {
-    kind: "angry-emoji",
-    name: "Emoji enfadado",
-    rarity: "normal",
-    weight: 20,
-    points: 12,
-    experience: 2,
-    growth: 1,
-    color: 0xffd23f,
-    visualScale: 1,
-    visualEffect: "pulse",
-  },
-  "sad-sock": {
-    kind: "sad-sock",
-    name: "Calcetín triste",
-    rarity: "normal",
-    weight: 20,
-    points: 10,
-    experience: 2,
-    growth: 1,
-    color: 0x8f7aea,
-    visualScale: 0.94,
-    visualEffect: "float",
-  },
-  "duck-king": {
-    kind: "duck-king",
-    name: "Patito rey",
-    rarity: "rare",
-    weight: 7,
-    points: 25,
-    experience: 4,
-    growth: 2,
-    color: 0xffe066,
-    visualScale: 1.08,
-    visualEffect: "float",
-  },
-  "cringe-energy": {
-    kind: "cringe-energy",
-    name: "Energía cringe",
-    rarity: "rare",
-    weight: 5,
-    points: 25,
-    experience: 4,
-    growth: 1,
-    color: 0xff4fd8,
-    visualScale: 1.12,
-    visualEffect: "electric",
-    effect: { kind: "double-points", durationMs: 7_000 },
-  },
-  "influencer-avocado": {
-    kind: "influencer-avocado",
-    name: "Aguacate influencer",
-    rarity: "normal",
-    weight: 15,
-    points: 30,
-    experience: 2,
-    growth: 1,
-    color: 0x73c94f,
-    visualScale: 1.04,
-    visualEffect: "float",
-  },
-  "infinite-coffee": {
-    kind: "infinite-coffee",
-    name: "Café infinito",
-    rarity: "rare",
-    weight: 5,
-    points: 25,
-    experience: 4,
-    growth: 1,
-    color: 0xd98c52,
-    visualScale: 1.08,
-    visualEffect: "pulse",
-    effect: { kind: "speed-boost", durationMs: 6_000 },
-  },
-  "super-meme": {
-    kind: "super-meme",
-    name: "Super Meme",
-    rarity: "legendary",
-    weight: 1,
-    points: 300,
-    experience: 12,
-    growth: 6,
-    color: 0x5de8ff,
-    visualScale: 1.24,
-    visualEffect: "chaos",
-  },
-};
+export const FOOD_CATALOG: Readonly<Record<FoodKind, FoodDefinition>> =
+  Object.fromEntries(
+    Object.entries(GAME_BALANCE.food).map(([kind, definition]) => [
+      kind,
+      { ...definition, kind },
+    ]),
+  ) as Readonly<Record<FoodKind, FoodDefinition>>;
 
 export const FOOD_KINDS = Object.freeze(
   Object.keys(FOOD_CATALOG) as FoodKind[],
 );
 
-export const EVOLUTIONS: readonly Evolution[] = Object.freeze([
-  {
-    id: "mini-bicho",
-    name: "Mini Bicho Meme",
-    minExperience: 0,
-    tickMs: 150,
-    scale: 0.82,
-    headColor: 0xb9ff66,
-    bodyColor: 0x6ed34d,
-    accentColor: 0x2a154b,
-    effect: "none",
-  },
-  {
-    id: "gusano-legendario",
-    name: "Gusano Legendario",
-    minExperience: 8,
-    tickMs: 140,
-    scale: 0.9,
-    headColor: 0xffdd55,
-    bodyColor: 0xf6a623,
-    accentColor: 0x6b3b00,
-    effect: "sparkles",
-  },
-  {
-    id: "serpiente-influencer",
-    name: "Serpiente Influencer",
-    minExperience: 20,
-    tickMs: 128,
-    scale: 0.98,
-    headColor: 0xff70bf,
-    bodyColor: 0xa75cff,
-    accentColor: 0xffffff,
-    effect: "glow",
-  },
-  {
-    id: "monstruo-meme",
-    name: "Monstruo Meme",
-    minExperience: 38,
-    tickMs: 116,
-    scale: 1.08,
-    headColor: 0xff624d,
-    bodyColor: 0xe23a65,
-    accentColor: 0x3a0926,
-    effect: "pulse",
-  },
-  {
-    id: "dios-del-caos",
-    name: "Dios del Caos",
-    minExperience: 62,
-    tickMs: 104,
-    scale: 1.18,
-    headColor: 0x5de8ff,
-    bodyColor: 0x5848ff,
-    accentColor: 0xffef5a,
-    effect: "chaos",
-  },
-]);
+export const EVOLUTIONS: readonly Evolution[] = GAME_BALANCE.evolutions;
 
 export interface GameState {
   readonly seed: number;
@@ -283,6 +101,7 @@ export interface GameState {
   readonly activeEffects: readonly ActiveEffect[];
   readonly ticks: number;
   readonly elapsedMs: number;
+  readonly fastestTickMs: number;
 }
 
 export interface GameOptions {
@@ -386,20 +205,11 @@ export interface GameSnapshot {
   readonly ticks: number;
   readonly tickMs: number;
   readonly elapsedMs: number;
+  readonly fastestTickMs: number;
 }
 
 const DEFAULT_SEED = 0x5eed_1234;
-const DEFAULT_WIDTH = 24;
-const DEFAULT_HEIGHT = 16;
-const MIN_WIDTH = 8;
-const MIN_HEIGHT = 6;
-const MAX_DIRECTION_QUEUE = 2;
-const DIFFICULTY_INTERVAL_MS = 15_000;
-const MAX_DIFFICULTY_LEVEL = 12;
-const TICK_REDUCTION_PER_LEVEL_MS = 3;
-const MIN_TICK_MS = 78;
-const SPEED_BOOST_MULTIPLIER = 0.75;
-const MIN_BOOSTED_TICK_MS = 58;
+const { board, controls, difficulty: difficultyBalance } = GAME_BALANCE;
 
 const VECTORS: Readonly<Record<Direction, Position>> = {
   up: { x: 0, y: -1 },
@@ -532,8 +342,16 @@ export function createInitialState(
   seed = DEFAULT_SEED,
   options: GameOptions = {},
 ): GameState {
-  const width = validateDimension(options.width, DEFAULT_WIDTH, MIN_WIDTH);
-  const height = validateDimension(options.height, DEFAULT_HEIGHT, MIN_HEIGHT);
+  const width = validateDimension(
+    options.width,
+    board.width,
+    board.minimumWidth,
+  );
+  const height = validateDimension(
+    options.height,
+    board.height,
+    board.minimumHeight,
+  );
   const normalizedSeed = normalizeSeed(seed);
   const headX = Math.floor(width / 2);
   const headY = Math.floor(height / 2);
@@ -564,6 +382,7 @@ export function createInitialState(
     activeEffects: [],
     ticks: 0,
     elapsedMs: 0,
+    fastestTickMs: EVOLUTIONS[0]!.tickMs,
   };
 }
 
@@ -588,7 +407,8 @@ export function queueDirection(
   const lastDirection = state.directionQueue.at(-1) ?? state.direction;
   if (direction === OPPOSITE[lastDirection]) return state;
   if (direction === lastDirection) return state;
-  if (state.directionQueue.length >= MAX_DIRECTION_QUEUE) return state;
+  if (state.directionQueue.length >= controls.maximumDirectionQueue)
+    return state;
 
   const directionQueue = [...state.directionQueue, direction];
   return {
@@ -667,6 +487,7 @@ export function step(inputState: GameState): StepResult {
     queuedDirection,
     directionQueue,
     activeEffects,
+    fastestTickMs: Math.min(state.fastestTickMs, tickMs),
   };
 
   if (direction !== state.direction) {
@@ -781,6 +602,7 @@ export function step(inputState: GameState): StepResult {
       activeEffects: nextActiveEffects,
       ticks: tick,
       elapsedMs,
+      fastestTickMs: stateAtTick.fastestTickMs,
     },
     events,
   };
@@ -790,8 +612,8 @@ export function getDifficultyLevel(
   state: Pick<GameState, "elapsedMs">,
 ): number {
   return Math.min(
-    MAX_DIFFICULTY_LEVEL,
-    Math.floor(Math.max(0, state.elapsedMs) / DIFFICULTY_INTERVAL_MS),
+    difficultyBalance.maximumLevel,
+    Math.floor(Math.max(0, state.elapsedMs) / difficultyBalance.intervalMs),
   );
 }
 
@@ -800,11 +622,11 @@ type TickState = Pick<GameState, "experience"> &
 
 export function getTickMs(state: TickState): number {
   const elapsedMs = state.elapsedMs ?? 0;
-  const difficulty = getDifficultyLevel({ elapsedMs });
+  const difficultyLevel = getDifficultyLevel({ elapsedMs });
   const normalTickMs = Math.max(
-    MIN_TICK_MS,
+    difficultyBalance.minimumTickMs,
     evolutionFor(state.experience).tickMs -
-      difficulty * TICK_REDUCTION_PER_LEVEL_MS,
+      difficultyLevel * difficultyBalance.tickReductionPerLevelMs,
   );
   const hasSpeedBoost = (state.activeEffects ?? []).some(
     (effect) => effect.kind === "speed-boost" && effect.expiresAtMs > elapsedMs,
@@ -812,8 +634,8 @@ export function getTickMs(state: TickState): number {
 
   return hasSpeedBoost
     ? Math.max(
-        MIN_BOOSTED_TICK_MS,
-        Math.round(normalTickMs * SPEED_BOOST_MULTIPLIER),
+        difficultyBalance.minimumBoostedTickMs,
+        Math.round(normalTickMs * difficultyBalance.speedBoostMultiplier),
       )
     : normalTickMs;
 }
@@ -845,5 +667,6 @@ export function createSnapshot(state: GameState): GameSnapshot {
     ticks: state.ticks,
     tickMs: getTickMs(state),
     elapsedMs: state.elapsedMs,
+    fastestTickMs: state.fastestTickMs,
   };
 }

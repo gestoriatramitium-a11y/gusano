@@ -34,6 +34,9 @@ export function ResultScreen({
     <div
       className="screen-overlay screen-overlay--defeat"
       data-testid="game-over"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Resultado final de la partida"
     >
       <div
         className={`defeat-card ${isNewRecord ? "defeat-card--record" : ""}`}

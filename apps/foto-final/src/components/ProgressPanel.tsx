@@ -121,6 +121,23 @@ export function ProgressPanel({ progress }: ProgressPanelProps) {
               <strong>{formatDuration(stats.averageDurationMs)}</strong>
             </span>
             <span>
+              XP total <strong>{progress.metrics.totalExperience}</strong>
+            </span>
+            <span>
+              XP medio <strong>{stats.averageExperience}</strong>
+            </span>
+            <span>
+              Mejor XP <strong>{progress.metrics.bestExperience}</strong>
+            </span>
+            <span>
+              Mayor velocidad{" "}
+              <strong>
+                {progress.metrics.fastestTickMs > 0
+                  ? `${progress.metrics.fastestTickMs} ms`
+                  : "—"}
+              </strong>
+            </span>
+            <span>
               Comunes <strong>{stats.commonCollected}</strong>
             </span>
             <span>
