@@ -10,6 +10,7 @@ import type { MemeSnakeScene } from "../game/MemeSnakeScene";
 export interface GameController {
   changeDirection(direction: "up" | "down" | "left" | "right"): void;
   startRun(): void;
+  setPaused(paused: boolean): void;
   setVisualPreferences(
     qualityPreference: GraphicsQualityPreference,
     effectiveQuality: EffectiveGraphicsQuality,
@@ -116,6 +117,7 @@ export function GameCanvas({
         onController({
           changeDirection: (direction) => scene.changeDirection(direction),
           startRun: () => scene.startRun(),
+          setPaused: (paused) => scene.setPaused(paused),
           setVisualPreferences: (
             nextPreference,
             nextQuality,

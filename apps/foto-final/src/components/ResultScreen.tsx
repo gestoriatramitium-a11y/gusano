@@ -13,6 +13,7 @@ interface ResultScreenProps {
   readonly isNewRecord: boolean;
   readonly sharePreview: string;
   readonly shareStatus: string;
+  readonly onHome: () => void;
   readonly onRestart: () => void;
   readonly onShare: () => void;
 }
@@ -25,6 +26,7 @@ export function ResultScreen({
   isNewRecord,
   sharePreview,
   shareStatus,
+  onHome,
   onRestart,
   onShare,
 }: ResultScreenProps) {
@@ -111,6 +113,14 @@ export function ResultScreen({
             data-testid="share-button"
           >
             Compartir resultado
+          </button>
+          <button
+            className="secondary-button"
+            type="button"
+            onClick={onHome}
+            data-testid="result-home-button"
+          >
+            Inicio
           </button>
         </div>
 

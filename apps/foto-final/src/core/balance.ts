@@ -6,7 +6,7 @@ export const GAME_BALANCE = Object.freeze({
     minimumHeight: 6,
   }),
   controls: Object.freeze({
-    maximumDirectionQueue: 2,
+    maximumDirectionQueue: 3,
   }),
   difficulty: Object.freeze({
     intervalMs: 20_000,

@@ -22,6 +22,11 @@ import type {
   EffectiveGraphicsQuality,
   GraphicsQualityPreference,
 } from "../core/preferences";
+import {
+  createSmoothSnakePath,
+  directionAlongPath,
+  interpolateSnakeAnchors,
+} from "./snakeVisuals";
 
 interface SceneCallbacks {
   onEvent(event: GameEvent): void;
@@ -71,17 +76,6 @@ const KEY_TO_DIRECTION: Readonly<Record<string, Direction>> = {
   KeyD: "right",
 };
 
-const DIRECTION_VECTOR: Readonly<Record<Direction, Position>> = {
-  up: { x: 0, y: -1 },
-  down: { x: 0, y: 1 },
-  left: { x: -1, y: 0 },
-  right: { x: 1, y: 0 },
-};
-
-function interpolate(from: number, to: number, amount: number): number {
-  return from + (to - from) * amount;
-}
-
 export class MemeSnakeScene extends Phaser.Scene {
   private readonly callbacks: SceneCallbacks;
   private state: GameState = createInitialState();
@@ -100,6 +94,7 @@ export class MemeSnakeScene extends Phaser.Scene {
   private reduceMotion: boolean;
   private frameTimeTotal = 0;
   private frameSampleCount = 0;
+  private userPaused = false;
 
   constructor(options: SceneOptions) {
     super({ key: "meme-snake" });
@@ -171,6 +166,16 @@ export class MemeSnakeScene extends Phaser.Scene {
       return;
     }
 
+    if (this.userPaused) {
+      const pausedProgress = Phaser.Math.Clamp(
+        this.accumulatorMs / getTickMs(this.state),
+        0,
+        1,
+      );
+      this.renderDynamic(pausedProgress, time);
+      return;
+    }
+
     if (time < this.pausedUntil) {
       this.renderDynamic(1, time);
       return;
@@ -219,18 +224,25 @@ export class MemeSnakeScene extends Phaser.Scene {
     this.accumulatorMs = getTickMs(this.state);
     this.pausedUntil = 0;
     this.eatPulseUntil = 0;
+    this.userPaused = false;
     this.handleEvents(result.events, this.time.now);
     this.renderDynamic(1, this.time.now);
     this.emitSnapshot();
   }
 
   changeDirection(direction: Direction): void {
-    if (this.state.status !== "playing") return;
+    if (this.state.status !== "playing" || this.userPaused) return;
     const next = queueDirection(this.state, direction);
     if (next !== this.state) {
       this.state = next;
       this.emitSnapshot();
     }
+  }
+
+  setPaused(paused: boolean): void {
+    if (this.state.status !== "playing") return;
+    this.userPaused = paused;
+    this.pointerStart = null;
   }
 
   setVisualPreferences(
@@ -494,29 +506,41 @@ export class MemeSnakeScene extends Phaser.Scene {
         effect.kind === "double-points" &&
         effect.expiresAtMs > this.state.elapsedMs,
     );
-    const headScale = time < this.eatPulseUntil ? 1.24 : 1;
+    const headScale = time < this.eatPulseUntil ? 1.2 : 1;
+    const anchors = interpolateSnakeAnchors(
+      this.previousSnake,
+      this.state.snake,
+      progress,
+    ).map((point) => this.toPixels(point, metrics));
+    const subdivisions =
+      this.state.snake.length > 90
+        ? 2
+        : this.effectiveQuality === "reduced"
+          ? 3
+          : 4;
+    const path = createSmoothSnakePath(anchors, subdivisions);
+    const headDirection = directionAlongPath(path);
 
     graphics.clear();
-    for (let index = this.state.snake.length - 1; index >= 0; index -= 1) {
-      const target = this.state.snake[index]!;
-      const origin =
-        this.previousSnake[Math.min(index, this.previousSnake.length - 1)] ??
-        target;
-      const interpolated = {
-        x: interpolate(origin.x, target.x, progress),
-        y: interpolate(origin.y, target.y, progress),
-      };
-      const wobble =
-        index === 0 || this.reduceMotion
-          ? 0
-          : Math.sin(phase + index * 0.85) * 0.9;
-      const basePoint = this.toPixels(interpolated, metrics);
-      const point = { x: basePoint.x, y: basePoint.y + wobble };
+    for (let index = path.length - 1; index >= 0; index -= 1) {
+      const basePoint = path[index]!;
       const isHead = index === 0;
-      const tailProgress = index / Math.max(1, this.state.snake.length - 1);
+      const tailProgress = index / Math.max(1, path.length - 1);
+      const neighbor = path[Math.min(path.length - 1, index + 1)] ?? basePoint;
+      const tangentX = basePoint.x - neighbor.x;
+      const tangentY = basePoint.y - neighbor.y;
+      const tangentLength = Math.hypot(tangentX, tangentY) || 1;
+      const elasticOffset =
+        isHead || this.reduceMotion
+          ? 0
+          : Math.sin(phase - index * 0.28) * 0.72 * (1 - tailProgress * 0.35);
+      const point = {
+        x: basePoint.x + (-tangentY / tangentLength) * elasticOffset,
+        y: basePoint.y + (tangentX / tangentLength) * elasticOffset,
+      };
       const radius = isHead
-        ? metrics.cell * 0.47 * evolution.scale * headScale
-        : metrics.cell * (0.39 - tailProgress * 0.09) * evolution.scale;
+        ? metrics.cell * 0.42 * evolution.scale * headScale
+        : metrics.cell * (0.29 - tailProgress * 0.08) * evolution.scale;
 
       if (
         isHead &&
@@ -535,7 +559,7 @@ export class MemeSnakeScene extends Phaser.Scene {
       graphics.fillStyle(
         isHead
           ? evolution.headColor
-          : index % 2 === 0
+          : Math.floor(index / subdivisions) % 2 === 0
             ? evolution.bodyColor
             : evolution.headColor,
         0.97,
@@ -548,8 +572,15 @@ export class MemeSnakeScene extends Phaser.Scene {
       );
       graphics.strokeCircle(point.x, point.y, radius);
 
-      if (isHead)
-        this.renderFace(graphics, point, metrics.cell, evolution.accentColor);
+      if (isHead) {
+        this.renderFace(
+          graphics,
+          point,
+          metrics.cell,
+          evolution.accentColor,
+          headDirection,
+        );
+      }
     }
 
     if (
@@ -557,15 +588,7 @@ export class MemeSnakeScene extends Phaser.Scene {
       !this.reduceMotion &&
       (evolution.effect === "sparkles" || evolution.effect === "chaos")
     ) {
-      const head = this.state.snake[0]!;
-      const origin = this.previousSnake[0] ?? head;
-      const headPoint = this.toPixels(
-        {
-          x: interpolate(origin.x, head.x, progress),
-          y: interpolate(origin.y, head.y, progress),
-        },
-        metrics,
-      );
+      const headPoint = path[0]!;
       graphics.fillStyle(evolution.accentColor, 0.86);
       for (let index = 0; index < 4; index += 1) {
         const angle = phase * 0.7 + index * (Math.PI / 2);
@@ -583,8 +606,8 @@ export class MemeSnakeScene extends Phaser.Scene {
     headPoint: Position,
     cell: number,
     accentColor: number,
+    vector: Position,
   ): void {
-    const vector = DIRECTION_VECTOR[this.state.direction];
     const side = { x: -vector.y, y: vector.x };
     for (const eyeSide of [-1, 1]) {
       const eyeX =

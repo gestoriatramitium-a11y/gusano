@@ -21,11 +21,12 @@ Esta capa no importa React, Phaser, APIs del DOM ni almacenamiento del navegador
 - traducir teclado, gestos o controles de la interfaz a direcciones válidas;
 - avanzar el estado al intervalo que decide el núcleo;
 - interpolar posiciones entre pulsos para suavizar el movimiento sin alterar la cuadrícula lógica;
+- convertir los anclajes interpolados en una curva de microsegmentos y orientar la cabeza con su tangente;
 - dibujar el tablero, las cinco evoluciones y las diez comidas con primitivas Canvas;
 - reflejar crecimiento, rarezas, partículas, efectos activos, evolución y derrota;
 - publicar hacia React los cambios necesarios para la interfaz.
 
-La escena no debe duplicar las reglas del núcleo. Un cambio visual no puede alterar por sí solo la puntuación, las colisiones o la semilla.
+`src/game/snakeVisuals.ts` contiene las funciones puras de interpolación, suavizado y dirección de la curva. La escena no debe duplicar las reglas del núcleo. Un cambio visual no puede alterar por sí solo la puntuación, las colisiones o la semilla.
 
 ### Integración React
 
@@ -43,6 +44,7 @@ React y Phaser se comunican mediante una interfaz pequeña de eventos y comandos
 6. Una colisión lleva al estado de derrota, registra una única sesión local y evalúa nuevas misiones y logros.
 7. La pantalla final muestra rendimiento, comparación con el récord, frase contextual y un reto compartible mediante Web Share o portapapeles.
 8. Volver a jugar crea un estado inicial nuevo sin recargar la aplicación; récord, métricas y desbloqueos permanecen en el navegador.
+9. Inicio pausa la carrera y pide confirmación; salir desmonta Phaser, cancela efectos transitorios y vuelve a la portada sin registrar la carrera abandonada.
 
 ## Representación y responsive
 

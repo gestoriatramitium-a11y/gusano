@@ -232,3 +232,56 @@ test("persiste calidad reducida y reducción de movimiento", async ({
   expect(runtime.pageErrors).toEqual([]);
   expect([...runtime.externalRequests]).toEqual([]);
 });
+
+test("pausa, cancela y sale de una partida limpiando el motor", async ({
+  page,
+}, testInfo) => {
+  const runtime = watchRuntime(page);
+  await page.goto("/");
+  await startGame(page);
+
+  const homeButton = page.getByTestId("home-button");
+  await expect(homeButton).toBeVisible();
+  await homeButton.click();
+  const confirmation = page.getByTestId("exit-confirmation");
+  await expect(confirmation).toBeVisible();
+  await expect(confirmation).toContainText("¿Salir de la partida?");
+
+  const timeBeforePause = await page
+    .locator(".hud__item")
+    .filter({ hasText: "Tiempo" })
+    .locator(".hud__value")
+    .innerText();
+  await page.waitForTimeout(450);
+  await expect(
+    page
+      .locator(".hud__item")
+      .filter({ hasText: "Tiempo" })
+      .locator(".hud__value"),
+  ).toHaveText(timeBeforePause);
+
+  await page.getByTestId("continue-button").click();
+  await expect(confirmation).toBeHidden();
+  await expect(page.locator(".canvas-shell canvas")).toHaveCount(1);
+
+  await homeButton.click();
+  await page.getByTestId("confirm-exit-button").click();
+  await expect(page.getByTestId("start-screen")).toBeVisible();
+  await expect(page.locator(".canvas-shell canvas")).toHaveCount(0);
+  await expect(page.getByTestId("stats-games")).toHaveText("0");
+
+  await startGame(page);
+  await expect(page.locator(".canvas-shell canvas")).toHaveCount(1);
+  await expect(page.getByTestId("hud")).toBeVisible();
+
+  await turnUp(page, testInfo.project.name === "chromium-mobile");
+  await expect(page.getByTestId("game-over")).toBeVisible({ timeout: 10_000 });
+  await page.getByTestId("result-home-button").click();
+  await expect(page.getByTestId("start-screen")).toBeVisible();
+  await expect(page.getByTestId("exit-confirmation")).toBeHidden();
+  await expect(page.locator(".canvas-shell canvas")).toHaveCount(0);
+
+  expect(runtime.consoleErrors).toEqual([]);
+  expect(runtime.pageErrors).toEqual([]);
+  expect([...runtime.externalRequests]).toEqual([]);
+});

@@ -164,24 +164,29 @@ describe("movimiento y controles", () => {
     });
   });
 
-  it("conserva hasta dos giros rápidos y los consume en orden", () => {
+  it("conserva hasta tres giros rápidos y los consume en orden", () => {
     const initial = createInitialState(8);
     const up = queueDirection(initial, "up");
     const left = queueDirection(up, "left");
-    const ignoredThird = queueDirection(left, "down");
+    const down = queueDirection(left, "down");
+    const ignoredFourth = queueDirection(down, "right");
 
-    expect(left.directionQueue).toEqual(["up", "left"]);
-    expect(left.queuedDirection).toBe("up");
-    expect(ignoredThird).toBe(left);
+    expect(down.directionQueue).toEqual(["up", "left", "down"]);
+    expect(down.queuedDirection).toBe("up");
+    expect(ignoredFourth).toBe(down);
 
-    const first = step(left).state;
+    const first = step(down).state;
     expect(first.direction).toBe("up");
-    expect(first.directionQueue).toEqual(["left"]);
+    expect(first.directionQueue).toEqual(["left", "down"]);
     expect(first.queuedDirection).toBe("left");
 
     const second = step(first).state;
     expect(second.direction).toBe("left");
-    expect(second.directionQueue).toEqual([]);
+    expect(second.directionQueue).toEqual(["down"]);
+
+    const third = step(second).state;
+    expect(third.direction).toBe("down");
+    expect(third.directionQueue).toEqual([]);
   });
 
   it("rechaza un giro opuesto respecto a la última entrada en cola", () => {

@@ -148,6 +148,7 @@ export function App() {
       detectGraphicsQuality(readPlayerPreferences().graphicsQuality),
     );
   const [isNewRecord, setIsNewRecord] = useState(false);
+  const [exitConfirmationOpen, setExitConfirmationOpen] = useState(false);
   const [previousBestScore, setPreviousBestScore] = useState(
     progress.bestScore,
   );
@@ -328,6 +329,44 @@ export function App() {
     else pendingStart.current = true;
   }, [beginRun, controller, preferences.tutorialSeen]);
 
+  const returnToStart = useCallback(() => {
+    pendingStart.current = false;
+    runRecorded.current = false;
+    if (announcementTimer.current !== null) {
+      window.clearTimeout(announcementTimer.current);
+      announcementTimer.current = null;
+    }
+    if (celebrationTimer.current !== null) {
+      window.clearTimeout(celebrationTimer.current);
+      celebrationTimer.current = null;
+    }
+    navigator.vibrate?.(0);
+    audio.current?.close();
+    audio.current = null;
+    setExitConfirmationOpen(false);
+    setAnnouncement("");
+    setCelebration(null);
+    setSharePreview("");
+    setCopyStatus("");
+    setSnapshot(null);
+    setEngineRequested(false);
+    setScreen("start");
+  }, []);
+
+  const requestReturnToStart = useCallback(() => {
+    if (screen === "playing" && snapshot?.status === "playing") {
+      controller?.setPaused(true);
+      setExitConfirmationOpen(true);
+      return;
+    }
+    returnToStart();
+  }, [controller, returnToStart, screen, snapshot?.status]);
+
+  const continueRun = useCallback(() => {
+    controller?.setPaused(false);
+    setExitConfirmationOpen(false);
+  }, [controller]);
+
   const completeOnboarding = useCallback(() => {
     if (!controller) return;
     setPreferences((current) => ({ ...current, tutorialSeen: true }));
@@ -414,6 +453,7 @@ export function App() {
     <main
       className="app-shell"
       data-reduce-motion={reduceMotion ? "true" : "false"}
+      data-screen={screen}
     >
       <div className="game-layout">
         <section className="game-card" aria-label="Meme Evolution Snake">
@@ -425,6 +465,16 @@ export function App() {
               Meme Evolution Snake
             </h1>
             <div className="header-actions">
+              {screen === "playing" && (
+                <button
+                  className="home-button"
+                  type="button"
+                  onClick={requestReturnToStart}
+                  data-testid="home-button"
+                >
+                  Inicio
+                </button>
+              )}
               <button
                 className="sound-button"
                 type="button"
@@ -553,6 +603,48 @@ export function App() {
               </div>
             )}
 
+            {exitConfirmationOpen && (
+              <div
+                className="screen-overlay screen-overlay--exit"
+                data-testid="exit-confirmation"
+              >
+                <div
+                  className="exit-dialog"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="exit-dialog-title"
+                >
+                  <span className="exit-dialog__icon" aria-hidden="true">
+                    ↩
+                  </span>
+                  <h2 id="exit-dialog-title">¿Salir de la partida?</h2>
+                  <p>
+                    Esta carrera no se guardará. Tu récord anterior seguirá a
+                    salvo.
+                  </p>
+                  <div className="exit-dialog__actions">
+                    <button
+                      className="primary-button"
+                      type="button"
+                      onClick={continueRun}
+                      autoFocus
+                      data-testid="continue-button"
+                    >
+                      Continuar jugando
+                    </button>
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      onClick={returnToStart}
+                      data-testid="confirm-exit-button"
+                    >
+                      Salir al inicio
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {screen === "start" && (
               <div
                 className="screen-overlay screen-overlay--menu"
@@ -635,6 +727,7 @@ export function App() {
                 isNewRecord={isNewRecord}
                 sharePreview={sharePreview}
                 shareStatus={copyStatus}
+                onHome={requestReturnToStart}
                 onRestart={requestStart}
                 onShare={() => void copyResult()}
               />

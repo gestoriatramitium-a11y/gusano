@@ -8,6 +8,7 @@ Esta matriz relaciona cada requisito con su implementación y con la evidencia e
 | Personaje inicial “Mini Bicho Meme”        | `src/App.tsx`, `src/game/MemeSnakeScene.ts`                                  | Inspección visual y prueba E2E                                  |
 | Movimiento continuo estilo Snake           | `src/core/game.ts`, `src/game/MemeSnakeScene.ts`                             | `tests/unit/game.test.ts`, `tests/e2e/smoke.spec.ts`            |
 | Movimiento suave y respuesta de giros      | Interpolación en `MemeSnakeScene.ts`; cola en `src/core/game.ts`             | Pruebas unitarias de cola y revisión visual                     |
+| Curvatura y microsegmentos del cuerpo      | `src/game/snakeVisuals.ts`, `MemeSnakeScene.ts`                              | `tests/unit/snakeVisuals.test.ts` e inspección visual           |
 | Dificultad y velocidad progresivas         | `src/core/game.ts`                                                           | Pruebas unitarias de intervalos, límites y turbo                |
 | Controles de teclado                       | `src/game/MemeSnakeScene.ts`                                                 | `tests/e2e/smoke.spec.ts`                                       |
 | Controles táctiles y móvil                 | `src/components/GameCanvas.tsx`, `src/App.tsx`, `src/styles.css`             | Proyecto móvil de Playwright e inspección responsive            |
@@ -20,6 +21,7 @@ Esta matriz relaciona cada requisito con su implementación y con la evidencia e
 | Puntuación                                 | `src/core/game.ts`, presentación en `src/App.tsx`                            | Prueba unitaria y `tests/e2e/smoke.spec.ts`                     |
 | Pantalla de derrota                        | Estado en `src/core/game.ts`; interfaz en `src/App.tsx`                      | Prueba de colisión y `tests/e2e/smoke.spec.ts`                  |
 | Reinicio repetido                          | `src/App.tsx`, `src/components/GameCanvas.tsx`                               | Dos ciclos completos por dispositivo en Playwright              |
+| Salida confirmada al menú                  | `src/App.tsx`, `GameCanvas.tsx`, `MemeSnakeScene.ts`                         | Pausa, cancelación, desmontaje y remontaje en Playwright        |
 | Onboarding de primer uso                   | `src/components/OnboardingOverlay.tsx`, `src/core/preferences.ts`            | E2E de tutorial, foco y reapertura desde Ajustes                |
 | Movimiento reducido y calidad adaptable    | `src/core/preferences.ts`, `MemeSnakeScene.ts`, `SettingsPanel.tsx`          | E2E de persistencia y perfil sintético de CPU                   |
 | Resultado final detallado y nuevo récord   | `src/components/ResultScreen.tsx`, `src/core/results.ts`                     | `tests/unit/results.test.ts`, recorrido E2E e inspección visual |
