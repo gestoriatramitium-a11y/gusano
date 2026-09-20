@@ -510,6 +510,113 @@ button {
   accent-color: var(--lime);
 }
 
+.setting-row button {
+  min-height: 38px;
+  padding: 6px 11px;
+  color: #fff;
+  background: rgb(124 60 255 / 32%);
+  border: 1px solid rgb(255 255 255 / 28%);
+  border-radius: 9px;
+  cursor: pointer;
+  font-size: 0.7rem;
+  font-weight: 850;
+}
+
+.screen-overlay--country {
+  position: fixed;
+  z-index: 26;
+  min-height: 100dvh;
+  max-height: 100dvh;
+}
+
+.country-card {
+  width: min(100%, 720px);
+  padding: clamp(20px, 4vw, 36px);
+  color: #fff;
+  background:
+    radial-gradient(circle at 50% 0%, rgb(188 255 44 / 13%), transparent 38%),
+    rgb(19 11 47 / 97%);
+  border: 1px solid rgb(255 255 255 / 22%);
+  border-radius: 26px;
+  box-shadow: 0 30px 80px rgb(0 0 0 / 52%);
+  text-align: center;
+}
+
+.country-card h2 {
+  margin: 8px 0 4px;
+  font-size: clamp(1.8rem, 6vw, 3rem);
+  letter-spacing: -0.05em;
+  text-transform: uppercase;
+}
+
+.country-card > p:not(.eyebrow) {
+  margin: 0 0 18px;
+  color: var(--muted);
+}
+
+.country-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.country-option {
+  display: grid;
+  min-height: 74px;
+  padding: 8px;
+  color: #fff;
+  background: rgb(255 255 255 / 6%);
+  border: 1px solid rgb(255 255 255 / 16%);
+  border-radius: 14px;
+  cursor: pointer;
+  place-items: center;
+}
+
+.country-option span {
+  font-size: 1.7rem;
+}
+
+.country-option strong {
+  font-size: 0.72rem;
+}
+
+.country-option[data-selected="true"] {
+  color: #170d31;
+  background: var(--lime);
+  border-color: #fff;
+  box-shadow: 0 0 0 3px rgb(188 255 44 / 20%);
+}
+
+.country-choice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 18px 0 14px;
+  gap: 10px;
+}
+
+.country-choice > span {
+  font-size: 2.4rem;
+}
+
+.country-choice small,
+.country-choice strong {
+  display: block;
+  text-align: left;
+}
+
+.country-choice small {
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.country-actions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .screen-overlay--onboarding {
   position: fixed;
   z-index: 25;
@@ -1504,6 +1611,25 @@ button {
 
   .settings-panel {
     margin-top: 10px;
+  }
+
+  .country-card {
+    padding: 16px;
+    border-radius: 18px;
+  }
+
+  .country-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .country-option {
+    min-height: 62px;
+    padding: 5px;
+  }
+
+  .country-option span {
+    font-size: 1.4rem;
   }
 
   .onboarding-card {

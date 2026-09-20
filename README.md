@@ -1,6 +1,6 @@
 # Meme Evolution Snake
 
-MVP HTML5 para un jugador que combina el movimiento clásico de *Snake* con una criatura meme que crece y cambia de aspecto durante la partida. Todo se ejecuta en el navegador: no hay backend, base de datos, cuentas, multijugador ni recursos gráficos externos.
+MVP HTML5 para un jugador que combina el movimiento clásico de _Snake_ con una criatura meme que crece y cambia de aspecto durante la partida. Todo se ejecuta en el navegador: no hay backend, base de datos, cuentas, multijugador ni recursos gráficos externos.
 
 El jugador controla a **Mini Bicho Meme**, recoge objetos de distintas rarezas, aumenta su puntuación y longitud y atraviesa cinco evoluciones visuales. La ronda acelera progresivamente y termina al chocar; la pantalla de derrota resume el resultado, crea un reto de texto para copiar y permite volver a jugar de inmediato.
 
@@ -8,6 +8,9 @@ El jugador controla a **Mini Bicho Meme**, recoge objetos de distintas rarezas, 
 
 - Portada con el logotipo **Meme Evolution Snake**.
 - Movimiento continuo con interpolación visual, cola de giros y aceleración progresiva.
+- Mundo local vivo con bots pequeños, medianos y gigantes de cuatro personalidades.
+- Selección persistente entre doce países y banderas que acompañan a jugador y rivales.
+- Cuatro biomas procedurales y eventos de lluvia, caos, portales e invasión bot.
 - Controles de teclado, gestos de deslizamiento y botones táctiles para móvil.
 - Diez comidas meme normales, raras o legendarias, con puntos, XP, probabilidad, escala y animación configurables.
 - Café Infinito activa turbo temporal y Energía Cringe duplica puntos; Patata Dorada y Super Meme ofrecen grandes recompensas.
@@ -84,6 +87,7 @@ El `netlify.toml` de la raíz configura `apps/foto-final` como directorio base, 
 ## Documentación
 
 - [Arquitectura](apps/foto-final/docs/ARCHITECTURE.md)
+- [World Evolution: bots, países y mapa](apps/foto-final/docs/WORLD_EVOLUTION.md)
 - [Trazabilidad](apps/foto-final/docs/TRACEABILITY.md)
 - [Validación local](apps/foto-final/docs/VALIDATION.md)
 - [Despliegue](apps/foto-final/docs/DEPLOYMENT.md)

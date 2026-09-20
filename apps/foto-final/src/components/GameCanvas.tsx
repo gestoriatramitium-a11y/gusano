@@ -1,11 +1,13 @@
 import { useEffect, useRef } from "react";
 
 import type { GameEvent, GameSnapshot } from "../core/game";
+import type { CountryCode } from "../core/countries";
 import type {
   EffectiveGraphicsQuality,
   GraphicsQualityPreference,
 } from "../core/preferences";
 import type { MemeSnakeScene } from "../game/MemeSnakeScene";
+import type { WorldNotification } from "../core/world";
 
 export interface GameController {
   changeDirection(direction: "up" | "down" | "left" | "right"): void;
@@ -22,22 +24,26 @@ interface GameCanvasProps {
   onController(controller: GameController | null): void;
   onEvent(event: GameEvent): void;
   onSnapshot(snapshot: GameSnapshot): void;
+  onWorldEvent(event: WorldNotification): void;
   onQualityChange(quality: EffectiveGraphicsQuality): void;
   onLoadError(): void;
   qualityPreference: GraphicsQualityPreference;
   effectiveQuality: EffectiveGraphicsQuality;
   reduceMotion: boolean;
+  countryCode: CountryCode;
 }
 
 export function GameCanvas({
   onController,
   onEvent,
   onSnapshot,
+  onWorldEvent,
   onQualityChange,
   onLoadError,
   qualityPreference,
   effectiveQuality,
   reduceMotion,
+  countryCode,
 }: GameCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<MemeSnakeScene | null>(null);
@@ -49,6 +55,7 @@ export function GameCanvas({
   const callbacksRef = useRef({
     onEvent,
     onSnapshot,
+    onWorldEvent,
     onQualityChange,
     onLoadError,
   });
@@ -57,10 +64,11 @@ export function GameCanvas({
     callbacksRef.current = {
       onEvent,
       onSnapshot,
+      onWorldEvent,
       onQualityChange,
       onLoadError,
     };
-  }, [onEvent, onLoadError, onQualityChange, onSnapshot]);
+  }, [onEvent, onLoadError, onQualityChange, onSnapshot, onWorldEvent]);
 
   useEffect(() => {
     sceneRef.current?.setVisualPreferences(
@@ -88,11 +96,13 @@ export function GameCanvas({
         const scene = new sceneModule.MemeSnakeScene({
           onEvent: (event) => callbacksRef.current.onEvent(event),
           onSnapshot: (snapshot) => callbacksRef.current.onSnapshot(snapshot),
+          onWorldEvent: (event) => callbacksRef.current.onWorldEvent(event),
           onQualityChange: (quality) =>
             callbacksRef.current.onQualityChange(quality),
           qualityPreference: initialVisuals.qualityPreference,
           initialQuality: initialVisuals.effectiveQuality,
           reduceMotion: initialVisuals.reduceMotion,
+          playerCountryCode: countryCode,
         });
         sceneRef.current = scene;
         game = new Phaser.Game({
@@ -140,7 +150,7 @@ export function GameCanvas({
       sceneRef.current = null;
       game?.destroy(true);
     };
-  }, [onController]);
+  }, [countryCode, onController]);
 
   return (
     <div

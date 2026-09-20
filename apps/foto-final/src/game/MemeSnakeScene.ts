@@ -8,6 +8,7 @@ import {
   getEvolution,
   getTickMs,
   queueDirection,
+  relocateFood,
   start,
   step,
   type Direction,
@@ -18,10 +19,25 @@ import {
   type GameState,
   type Position,
 } from "../core/game";
+import { getCountry, type CountryCode } from "../core/countries";
 import type {
   EffectiveGraphicsQuality,
   GraphicsQualityPreference,
 } from "../core/preferences";
+import {
+  botEvolutionName,
+  createWorldState,
+  occupiedByWorld,
+  stepWorld,
+  type WorldNotification,
+  type WorldState,
+} from "../core/world";
+import {
+  BIOMES,
+  BOT_TIERS,
+  WORLD_CONFIG,
+  WORLD_EVENTS,
+} from "../core/worldConfig";
 import {
   createSmoothSnakePath,
   directionAlongPath,
@@ -32,12 +48,14 @@ interface SceneCallbacks {
   onEvent(event: GameEvent): void;
   onSnapshot(snapshot: GameSnapshot): void;
   onQualityChange(quality: EffectiveGraphicsQuality): void;
+  onWorldEvent(event: WorldNotification): void;
 }
 
 interface SceneOptions extends SceneCallbacks {
   readonly qualityPreference: GraphicsQualityPreference;
   readonly initialQuality: EffectiveGraphicsQuality;
   readonly reduceMotion: boolean;
+  readonly playerCountryCode: CountryCode;
 }
 
 interface BoardMetrics {
@@ -81,10 +99,15 @@ export class MemeSnakeScene extends Phaser.Scene {
   private state: GameState = createInitialState();
   private previousSnake: readonly Position[] = this.state.snake;
   private boardGraphics?: Phaser.GameObjects.Graphics;
+  private environmentGraphics?: Phaser.GameObjects.Graphics;
+  private worldEffectsGraphics?: Phaser.GameObjects.Graphics;
+  private botGraphics?: Phaser.GameObjects.Graphics;
   private snakeGraphics?: Phaser.GameObjects.Graphics;
   private foodGraphics?: Phaser.GameObjects.Graphics;
   private foodGlyph?: Phaser.GameObjects.Text;
   private foodLabel?: Phaser.GameObjects.Text;
+  private readonly botLabels = new Map<string, Phaser.GameObjects.Text>();
+  private readonly biomeLabels: Phaser.GameObjects.Text[] = [];
   private accumulatorMs = 0;
   private pointerStart: Position | null = null;
   private pausedUntil = 0;
@@ -95,6 +118,9 @@ export class MemeSnakeScene extends Phaser.Scene {
   private frameTimeTotal = 0;
   private frameSampleCount = 0;
   private userPaused = false;
+  private readonly playerCountryCode: CountryCode;
+  private world: WorldState;
+  private previousWorld: WorldState;
 
   constructor(options: SceneOptions) {
     super({ key: "meme-snake" });
@@ -102,10 +128,22 @@ export class MemeSnakeScene extends Phaser.Scene {
     this.qualityPreference = options.qualityPreference;
     this.effectiveQuality = options.initialQuality;
     this.reduceMotion = options.reduceMotion;
+    this.playerCountryCode = options.playerCountryCode;
+    this.world = createWorldState(1, {
+      width: this.state.width,
+      height: this.state.height,
+      quality: options.initialQuality,
+      playerCountryCode: options.playerCountryCode,
+      playerSnake: this.state.snake,
+    });
+    this.previousWorld = this.world;
   }
 
   create(): void {
     this.boardGraphics = this.add.graphics();
+    this.environmentGraphics = this.add.graphics();
+    this.worldEffectsGraphics = this.add.graphics();
+    this.botGraphics = this.add.graphics();
     this.foodGraphics = this.add.graphics();
     this.snakeGraphics = this.add.graphics();
     this.foodGlyph = this.add
@@ -125,7 +163,6 @@ export class MemeSnakeScene extends Phaser.Scene {
         padding: { x: 7, y: 4 },
       })
       .setOrigin(0.5, 1);
-
     this.input.keyboard?.on("keydown", (event: KeyboardEvent) => {
       const direction = KEY_TO_DIRECTION[event.code];
       if (!direction) return;
@@ -155,6 +192,7 @@ export class MemeSnakeScene extends Phaser.Scene {
     });
 
     this.renderBoard();
+    this.renderEnvironment();
     this.renderDynamic(1, 0);
     this.emitSnapshot();
   }
@@ -192,6 +230,21 @@ export class MemeSnakeScene extends Phaser.Scene {
       const result = step(this.state);
       this.state = result.state;
       this.handleEvents(result.events, time);
+      if (this.state.status === "playing") {
+        this.previousWorld = this.world;
+        const worldResult = stepWorld(this.world, {
+          elapsedMs: this.state.elapsedMs,
+          playerSnake: this.state.snake,
+          food: this.state.food,
+        });
+        this.world = worldResult.state;
+        worldResult.notifications.forEach((event) =>
+          this.callbacks.onWorldEvent(event),
+        );
+        if (worldResult.foodClaimedByBot) {
+          this.state = relocateFood(this.state, occupiedByWorld(this.world));
+        }
+      }
       committedSteps += 1;
       safety += 1;
       if (this.state.status === "game-over") {
@@ -220,11 +273,21 @@ export class MemeSnakeScene extends Phaser.Scene {
         : generatedSeed || 1;
     const result = start(createInitialState(seed));
     this.state = result.state;
+    this.world = createWorldState(seed, {
+      width: this.state.width,
+      height: this.state.height,
+      quality: this.effectiveQuality,
+      playerCountryCode: this.playerCountryCode,
+      playerSnake: this.state.snake,
+    });
+    this.previousWorld = this.world;
     this.previousSnake = this.state.snake.map((position) => ({ ...position }));
     this.accumulatorMs = getTickMs(this.state);
     this.pausedUntil = 0;
     this.eatPulseUntil = 0;
     this.userPaused = false;
+    this.renderBoard();
+    this.renderEnvironment();
     this.handleEvents(result.events, this.time.now);
     this.renderDynamic(1, this.time.now);
     this.emitSnapshot();
@@ -354,6 +417,17 @@ export class MemeSnakeScene extends Phaser.Scene {
       boardHeight + 20,
       22,
     );
+    const halfWidth = boardWidth / 2;
+    const halfHeight = boardHeight / 2;
+    BIOMES.forEach((biome, index) => {
+      this.boardGraphics!.fillStyle(biome.backgroundColor, 0.76);
+      this.boardGraphics!.fillRect(
+        offsetX + (index % 2) * halfWidth,
+        offsetY + Math.floor(index / 2) * halfHeight,
+        halfWidth,
+        halfHeight,
+      );
+    });
     this.boardGraphics.lineStyle(2, 0x7c3cff, 0.46);
     this.boardGraphics.strokeRoundedRect(
       offsetX - 10,
@@ -379,6 +453,88 @@ export class MemeSnakeScene extends Phaser.Scene {
         offsetY + y * cell,
       );
     }
+    this.boardGraphics.lineStyle(2, 0xffffff, 0.08);
+    this.boardGraphics.lineBetween(
+      offsetX + halfWidth,
+      offsetY,
+      offsetX + halfWidth,
+      offsetY + boardHeight,
+    );
+    this.boardGraphics.lineBetween(
+      offsetX,
+      offsetY + halfHeight,
+      offsetX + boardWidth,
+      offsetY + halfHeight,
+    );
+
+    this.biomeLabels.forEach((label) => label.destroy());
+    this.biomeLabels.length = 0;
+    BIOMES.forEach((biome, index) => {
+      const label = this.add
+        .text(
+          offsetX + (index % 2) * halfWidth + 10,
+          offsetY + Math.floor(index / 2) * halfHeight + 8,
+          biome.name.toUpperCase(),
+          {
+            color: `#${biome.accentColor.toString(16).padStart(6, "0")}`,
+            fontFamily: "system-ui, sans-serif",
+            fontSize: "10px",
+            fontStyle: "bold",
+            backgroundColor: "#08051899",
+            padding: { x: 5, y: 3 },
+          },
+        )
+        .setAlpha(0.72);
+      this.biomeLabels.push(label);
+    });
+  }
+
+  private renderEnvironment(): void {
+    const graphics = this.environmentGraphics;
+    if (!graphics) return;
+    const metrics = this.metrics();
+    graphics.clear();
+    for (const decoration of this.world.decorations) {
+      const point = this.toPixels(decoration, metrics);
+      const size = metrics.cell * 0.18 * decoration.scale;
+      const biome = BIOMES.find(
+        (candidate) => candidate.id === decoration.biomeId,
+      )!;
+      graphics.fillStyle(biome.accentColor, 0.24);
+      if (decoration.kind === "rock") {
+        graphics.fillEllipse(point.x, point.y, size * 1.7, size);
+      } else if (
+        decoration.kind === "bush" ||
+        decoration.kind === "flower" ||
+        decoration.kind === "crystal"
+      ) {
+        graphics.fillCircle(point.x, point.y, size);
+        graphics.fillCircle(
+          point.x + size * 0.75,
+          point.y + size * 0.15,
+          size * 0.7,
+        );
+        if (decoration.kind !== "bush") {
+          graphics.fillStyle(0xffffff, 0.35);
+          graphics.fillCircle(point.x, point.y, size * 0.32);
+        }
+      } else {
+        graphics.fillRoundedRect(
+          point.x - size * 0.75,
+          point.y - size * 0.5,
+          size * 1.5,
+          size,
+          size * 0.25,
+        );
+        graphics.lineStyle(1, 0xffffff, 0.24);
+        graphics.lineBetween(
+          point.x - size * 0.45,
+          point.y,
+          point.x + size * 0.45,
+          point.y,
+        );
+      }
+    }
   }
 
   private renderDynamic(progress: number, time: number): void {
@@ -386,12 +542,265 @@ export class MemeSnakeScene extends Phaser.Scene {
       !this.snakeGraphics ||
       !this.foodGraphics ||
       !this.foodGlyph ||
-      !this.foodLabel
+      !this.foodLabel ||
+      !this.worldEffectsGraphics ||
+      !this.botGraphics
     )
       return;
     const metrics = this.metrics();
+    this.renderWorldEffects(metrics, time);
+    this.renderBots(metrics, progress, time);
     this.renderFood(metrics, time);
     this.renderSnake(metrics, progress, time);
+    this.renderPlayerIdentity(metrics, progress);
+  }
+
+  private renderWorldEffects(metrics: BoardMetrics, time: number): void {
+    const graphics = this.worldEffectsGraphics!;
+    graphics.clear();
+    const event = this.world.activeEvent;
+    const definition = event ? WORLD_EVENTS[event.kind] : null;
+    const phase = time * 0.003;
+    if (event?.kind === "portals" && event.portals) {
+      for (const portal of [event.portals.a, event.portals.b]) {
+        const point = this.toPixels(portal, metrics);
+        graphics.lineStyle(5, definition!.color, 0.45 + Math.sin(phase) * 0.15);
+        graphics.strokeCircle(point.x, point.y, metrics.cell * 0.58);
+        graphics.lineStyle(2, 0xffffff, 0.5);
+        graphics.strokeCircle(point.x, point.y, metrics.cell * 0.35);
+      }
+    } else if (event?.kind === "object-rain") {
+      const drops = this.effectiveQuality === "reduced" ? 8 : 16;
+      graphics.fillStyle(definition!.color, 0.5);
+      for (let index = 0; index < drops; index += 1) {
+        const x =
+          metrics.offsetX +
+          (((index * 83 + time * 0.08) % (this.state.width * metrics.cell)) +
+            metrics.cell * 0.2);
+        const y =
+          metrics.offsetY +
+          ((index * 47 + time * 0.19) % (this.state.height * metrics.cell));
+        graphics.fillCircle(x, y, 2.4 + (index % 3));
+      }
+    } else if (event?.kind === "chaos-mode") {
+      graphics.lineStyle(
+        8,
+        definition!.color,
+        0.18 + Math.sin(phase * 2) * 0.08,
+      );
+      graphics.strokeRoundedRect(
+        metrics.offsetX - 5,
+        metrics.offsetY - 5,
+        metrics.cell * this.state.width + 10,
+        metrics.cell * this.state.height + 10,
+        18,
+      );
+    } else if (event?.kind === "bot-invasion") {
+      graphics.lineStyle(3, definition!.color, 0.28);
+      for (let index = 0; index < 4; index += 1) {
+        const x =
+          metrics.offsetX + ((index + 1) / 5) * metrics.cell * this.state.width;
+        graphics.lineBetween(
+          x,
+          metrics.offsetY,
+          x,
+          metrics.offsetY + metrics.cell * 0.45,
+        );
+      }
+    }
+
+    const evolutionIndex = Math.max(
+      0,
+      EVOLUTIONS.findIndex(
+        (evolution) => evolution.id === this.state.evolutionId,
+      ),
+    );
+    if (!this.reduceMotion && evolutionIndex > 0) {
+      const particles = Math.min(
+        this.effectiveQuality === "reduced" ? 3 : 8,
+        evolutionIndex * 2,
+      );
+      const evolution = getEvolution(this.state);
+      graphics.fillStyle(evolution.accentColor, 0.22);
+      for (let index = 0; index < particles; index += 1) {
+        const x =
+          metrics.offsetX +
+          ((index * 137 + time * (0.012 + evolutionIndex * 0.004)) %
+            (metrics.cell * this.state.width));
+        const y =
+          metrics.offsetY +
+          ((index * 71 + Math.sin(phase + index) * 30 + 300) %
+            (metrics.cell * this.state.height));
+        graphics.fillCircle(x, y, 1.5 + evolutionIndex * 0.45);
+      }
+    }
+  }
+
+  private renderBots(
+    metrics: BoardMetrics,
+    progress: number,
+    time: number,
+  ): void {
+    const graphics = this.botGraphics!;
+    const activeIds = new Set(this.world.bots.map((bot) => bot.id));
+    for (const [id, label] of this.botLabels) {
+      if (!activeIds.has(id)) {
+        label.destroy();
+        this.botLabels.delete(id);
+      }
+    }
+    graphics.clear();
+    const visibleLimit =
+      WORLD_CONFIG.bots[this.effectiveQuality] +
+      (this.world.activeEvent?.kind === "bot-invasion"
+        ? WORLD_CONFIG.bots.invasionExtra
+        : 0);
+    for (const bot of this.world.bots.slice(0, visibleLimit)) {
+      const previous = this.previousWorld.bots.find(
+        (candidate) => candidate.id === bot.id,
+      );
+      const anchors = interpolateSnakeAnchors(
+        previous?.snake ?? bot.snake,
+        bot.snake,
+        progress,
+      ).map((position) => this.toPixels(position, metrics));
+      const path = createSmoothSnakePath(
+        anchors,
+        this.effectiveQuality === "reduced" ? 1 : 2,
+      );
+      const country = getCountry(bot.countryCode);
+      const tier = BOT_TIERS[bot.tier];
+      for (let index = path.length - 1; index >= 0; index -= 1) {
+        const point = path[index]!;
+        const tailProgress = index / Math.max(1, path.length - 1);
+        const radius =
+          metrics.cell *
+          (index === 0 ? 0.22 : 0.16 - tailProgress * 0.035) *
+          tier.bodyScale;
+        graphics.fillStyle(index === 0 ? country.accent : country.primary, 0.9);
+        graphics.fillCircle(point.x, point.y, radius);
+      }
+      const head = path[0]!;
+      const botDirection = directionAlongPath(path);
+      this.drawCountryFlag(
+        graphics,
+        head.x,
+        head.y - metrics.cell * 0.08,
+        Math.atan2(botDirection.y, botDirection.x) * 0.12,
+        country,
+        metrics.cell * 0.48,
+      );
+      let label = this.botLabels.get(bot.id);
+      if (!label) {
+        label = this.add
+          .text(0, 0, "", {
+            color: "#ffffff",
+            fontFamily: "system-ui, sans-serif",
+            fontSize: "10px",
+            fontStyle: "bold",
+            stroke: "#080518",
+            strokeThickness: 3,
+            align: "center",
+          })
+          .setOrigin(0.5, 1);
+        this.botLabels.set(bot.id, label);
+      }
+      label
+        .setText(`${country.code} · ${bot.name}\n${botEvolutionName(bot)}`)
+        .setPosition(head.x, head.y - metrics.cell * 0.82)
+        .setVisible(metrics.cell >= 24)
+        .setAlpha(0.88 + Math.sin(time * 0.004 + bot.phase) * 0.08);
+    }
+  }
+
+  private renderPlayerIdentity(metrics: BoardMetrics, progress: number): void {
+    const anchors = interpolateSnakeAnchors(
+      this.previousSnake,
+      this.state.snake,
+      progress,
+    ).map((position) => this.toPixels(position, metrics));
+    const path = createSmoothSnakePath(anchors, 2);
+    const head = path[0]!;
+    const direction = directionAlongPath(path);
+    const angle = Math.atan2(direction.y, direction.x);
+    if (this.state.status !== "game-over") {
+      this.drawCountryFlag(
+        this.snakeGraphics!,
+        head.x - direction.x * metrics.cell * 0.08,
+        head.y - direction.y * metrics.cell * 0.08,
+        this.reduceMotion ? 0 : angle * 0.12,
+        getCountry(this.playerCountryCode),
+        metrics.cell * 0.7,
+      );
+    }
+  }
+
+  private drawCountryFlag(
+    graphics: Phaser.GameObjects.Graphics,
+    x: number,
+    y: number,
+    rotation: number,
+    country: ReturnType<typeof getCountry>,
+    size: number,
+  ): void {
+    const cosine = Math.cos(rotation);
+    const sine = Math.sin(rotation);
+    const point = (localX: number, localY: number) => ({
+      x: x + localX * cosine - localY * sine,
+      y: y + localX * sine + localY * cosine,
+    });
+    const poleTop = point(0, -size);
+    const topRight = point(size * 0.78, -size);
+    const middleLeft = point(0, -size * 0.72);
+    const middleRight = point(size * 0.78, -size * 0.72);
+    const bottomLeft = point(0, -size * 0.44);
+    const bottomRight = point(size * 0.78, -size * 0.44);
+
+    graphics.lineStyle(Math.max(1.5, size * 0.08), 0xffffff, 0.88);
+    graphics.lineBetween(x, y, poleTop.x, poleTop.y);
+    graphics.fillStyle(country.primary, 1);
+    graphics.fillTriangle(
+      poleTop.x,
+      poleTop.y,
+      topRight.x,
+      topRight.y,
+      middleRight.x,
+      middleRight.y,
+    );
+    graphics.fillTriangle(
+      poleTop.x,
+      poleTop.y,
+      middleRight.x,
+      middleRight.y,
+      middleLeft.x,
+      middleLeft.y,
+    );
+    graphics.fillStyle(country.accent, 1);
+    graphics.fillTriangle(
+      middleLeft.x,
+      middleLeft.y,
+      middleRight.x,
+      middleRight.y,
+      bottomRight.x,
+      bottomRight.y,
+    );
+    graphics.fillTriangle(
+      middleLeft.x,
+      middleLeft.y,
+      bottomRight.x,
+      bottomRight.y,
+      bottomLeft.x,
+      bottomLeft.y,
+    );
+    graphics.lineStyle(Math.max(1, size * 0.045), 0xffffff, 0.72);
+    graphics.lineBetween(poleTop.x, poleTop.y, topRight.x, topRight.y);
+    graphics.lineBetween(topRight.x, topRight.y, bottomRight.x, bottomRight.y);
+    graphics.lineBetween(
+      bottomRight.x,
+      bottomRight.y,
+      bottomLeft.x,
+      bottomLeft.y,
+    );
   }
 
   private renderFood(metrics: BoardMetrics, time: number): void {

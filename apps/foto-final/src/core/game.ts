@@ -386,6 +386,21 @@ export function createInitialState(
   };
 }
 
+export function relocateFood(
+  state: GameState,
+  additionalOccupied: readonly Position[] = [],
+): GameState {
+  const spawned = spawnFood(state.rngState, state.width, state.height, [
+    ...state.snake,
+    ...additionalOccupied,
+  ]);
+  return {
+    ...state,
+    rngState: spawned.rngState,
+    food: spawned.food,
+  };
+}
+
 export function start(state: GameState): StepResult {
   if (state.status !== "ready") return { state, events: [] };
   const started: GameState = { ...state, status: "playing" };

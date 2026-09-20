@@ -19,16 +19,44 @@ describe("preferencias locales", () => {
     );
   });
 
-  it("persiste onboarding, calidad y reducción de movimiento", () => {
+  it("persiste onboarding, calidad, país y reducción de movimiento", () => {
     const preferences = {
       ...DEFAULT_PLAYER_PREFERENCES,
       tutorialSeen: true,
       reduceMotion: true,
       graphicsQuality: "reduced" as const,
+      countryCode: "JP" as const,
     };
     expect(
       parsePlayerPreferences(serializePlayerPreferences(preferences)),
     ).toEqual(preferences);
+  });
+
+  it("migra preferencias v1 sin inventar una identidad", () => {
+    expect(
+      parsePlayerPreferences(
+        JSON.stringify({
+          version: 1,
+          tutorialSeen: true,
+          graphicsQuality: "normal",
+        }),
+      ),
+    ).toEqual({
+      ...DEFAULT_PLAYER_PREFERENCES,
+      tutorialSeen: true,
+      graphicsQuality: "normal",
+    });
+  });
+
+  it("descarta códigos de país desconocidos", () => {
+    expect(
+      parsePlayerPreferences(
+        JSON.stringify({
+          version: 2,
+          countryCode: "XX",
+        }),
+      ).countryCode,
+    ).toBeNull();
   });
 
   it("normaliza una calidad gráfica inválida", () => {

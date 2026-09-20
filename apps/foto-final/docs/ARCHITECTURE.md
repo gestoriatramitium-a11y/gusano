@@ -12,7 +12,7 @@ La aplicación es un juego HTML5 estático y autónomo. React gestiona la interf
 
 Esta capa no importa React, Phaser, APIs del DOM ni almacenamiento del navegador.
 
-`src/core/balance.ts` centraliza tablero, probabilidades, recompensas, crecimiento, efectos, evoluciones y velocidad. `src/core/progress.ts` contiene el esquema de persistencia local v3 y las operaciones puras para acumular récord, partidas, comida, XP, velocidad máxima alcanzada, evolución máxima, supervivencia y métricas de balance. Migra los esquemas v1 y v2 sin inventar medias a partir de datos históricos incompletos. `src/core/challenges.ts` define y evalúa misiones y logros desde métricas compartidas; `src/core/results.ts` clasifica el rendimiento, selecciona frases deterministas y construye el texto compartible. `src/core/preferences.ts` valida onboarding, reducción de movimiento y calidad gráfica. La capa React es la única que lee o escribe estos estados en `localStorage`.
+`src/core/balance.ts` centraliza tablero, probabilidades, recompensas, crecimiento, efectos, evoluciones y velocidad. `src/core/world.ts` ejecuta en paralelo la simulación determinista de bots, biomas, decoración y eventos, y `src/core/worldConfig.ts` concentra sus parámetros. Los bots pueden reclamar la comida compartida, pero no cambian las colisiones del jugador. `src/core/countries.ts` define las identidades internacionales. `src/core/progress.ts` contiene el esquema de persistencia local v3 y las operaciones puras para acumular récord, partidas, comida, XP, velocidad máxima alcanzada, evolución máxima, supervivencia y métricas de balance. Migra los esquemas v1 y v2 sin inventar medias a partir de datos históricos incompletos. `src/core/challenges.ts` define y evalúa misiones y logros desde métricas compartidas; `src/core/results.ts` clasifica el rendimiento, selecciona frases deterministas y construye el texto compartible. `src/core/preferences.ts` valida país, onboarding, reducción de movimiento y calidad gráfica. La capa React es la única que lee o escribe estos estados en `localStorage`.
 
 ### Escena Phaser
 
@@ -22,7 +22,7 @@ Esta capa no importa React, Phaser, APIs del DOM ni almacenamiento del navegador
 - avanzar el estado al intervalo que decide el núcleo;
 - interpolar posiciones entre pulsos para suavizar el movimiento sin alterar la cuadrícula lógica;
 - convertir los anclajes interpolados en una curva de microsegmentos y orientar la cabeza con su tangente;
-- dibujar el tablero, las cinco evoluciones y las diez comidas con primitivas Canvas;
+- dibujar el tablero, cuatro biomas, bots identificados, las cinco evoluciones y las diez comidas con primitivas Canvas;
 - reflejar crecimiento, rarezas, partículas, efectos activos, evolución y derrota;
 - publicar hacia React los cambios necesarios para la interfaz.
 
@@ -30,21 +30,22 @@ Esta capa no importa React, Phaser, APIs del DOM ni almacenamiento del navegador
 
 ### Integración React
 
-`src/components/GameCanvas.tsx` carga Phaser y la escena de forma diferida al pulsar Jugar, crea el contenedor, instancia una única partida y destruye la instancia al desmontarse. `src/App.tsx` coordina el ciclo de pantallas, onboarding, preferencias y persistencia; `src/components/ProgressPanel.tsx` presenta estadísticas, misiones y logros, y `src/components/ResultScreen.tsx` presenta el cierre de partida. `src/components/OnboardingOverlay.tsx`, `SettingsPanel.tsx` y `DebugPanel.tsx` cubren la ayuda inicial, la accesibilidad/calidad y la inspección exclusiva de desarrollo. `src/utils/shareResult.ts` aísla Web Share y su fallback al portapapeles. `src/audio/SynthAudio.ts` genera respuestas sonoras cortas mediante Web Audio sin archivos externos. `src/styles.css` resuelve transiciones, layout, controles táctiles, áreas seguras, estados de foco y adaptación a móvil.
+`src/components/GameCanvas.tsx` carga Phaser y la escena de forma diferida al pulsar Jugar, crea el contenedor, instancia una única partida y destruye la instancia al desmontarse. `src/App.tsx` coordina el ciclo de pantallas, onboarding, selección de país, preferencias y persistencia; `src/components/CountrySelector.tsx` resuelve la identidad inicial sin dependencias remotas. `src/components/ProgressPanel.tsx` presenta estadísticas, misiones y logros, y `src/components/ResultScreen.tsx` presenta el cierre de partida. `src/components/OnboardingOverlay.tsx`, `SettingsPanel.tsx` y `DebugPanel.tsx` cubren la ayuda inicial, la accesibilidad/calidad y la inspección exclusiva de desarrollo. `src/utils/shareResult.ts` aísla Web Share y su fallback al portapapeles. `src/audio/SynthAudio.ts` genera respuestas sonoras cortas mediante Web Audio sin archivos externos. `src/styles.css` resuelve transiciones, layout, controles táctiles, áreas seguras, estados de foco y adaptación a móvil.
 
 React y Phaser se comunican mediante una interfaz pequeña de eventos y comandos; React no modifica directamente objetos internos de la escena.
 
 ## Flujo de una partida
 
 1. La portada presenta el nombre, Mini Bicho Meme y la acción de comenzar.
-2. Al iniciar se crea un estado determinista y se monta la escena.
-3. Cada entrada solicita un cambio de dirección; una cola corta conserva giros rápidos y el núcleo rechaza inversiones imposibles.
-4. Cada pulso avanza una celda y evalúa comida, puntos, XP, multiplicadores, efectos, dificultad, crecimiento, evolución y colisiones.
-5. Phaser interpola el resultado y emite feedback visual; React actualiza marcador, anuncios y efectos sonoros.
-6. Una colisión lleva al estado de derrota, registra una única sesión local y evalúa nuevas misiones y logros.
-7. La pantalla final muestra rendimiento, comparación con el récord, frase contextual y un reto compartible mediante Web Share o portapapeles.
-8. Volver a jugar crea un estado inicial nuevo sin recargar la aplicación; récord, métricas y desbloqueos permanecen en el navegador.
-9. Inicio pausa la carrera y pide confirmación; salir desmonta Phaser, cancela efectos transitorios y vuelve a la portada sin registrar la carrera abandonada.
+2. La primera partida solicita país y guarda la identidad únicamente en el navegador.
+3. Al iniciar se crean los estados deterministas del jugador y del mundo y se monta la escena.
+4. Cada entrada solicita un cambio de dirección; una cola corta conserva giros rápidos y el núcleo rechaza inversiones imposibles.
+5. Cada pulso avanza jugador y mundo; los bots evalúan supervivencia, amenazas, alimento y oportunidades.
+6. Phaser interpola el resultado y emite feedback visual; React actualiza marcador, anuncios y efectos sonoros.
+7. Una colisión lleva al estado de derrota, registra una única sesión local y evalúa nuevas misiones y logros.
+8. La pantalla final muestra rendimiento, comparación con el récord, frase contextual y un reto compartible mediante Web Share o portapapeles.
+9. Volver a jugar crea estados iniciales nuevos sin recargar la aplicación; récord, identidad, métricas y desbloqueos permanecen en el navegador.
+10. Inicio pausa la carrera y pide confirmación; salir desmonta Phaser, cancela efectos transitorios y vuelve a la portada sin registrar la carrera abandonada.
 
 ## Representación y responsive
 

@@ -46,8 +46,37 @@ async function turnUp(page: Page, isMobile: boolean): Promise<void> {
   }
 }
 
+async function turn(
+  page: Page,
+  direction: "up" | "down" | "left" | "right",
+  isMobile: boolean,
+): Promise<void> {
+  if (isMobile) {
+    const labels = {
+      up: "Mover arriba",
+      down: "Mover abajo",
+      left: "Mover a la izquierda",
+      right: "Mover a la derecha",
+    } as const;
+    await page.getByRole("button", { name: labels[direction] }).click();
+    return;
+  }
+  const keys = {
+    up: "ArrowUp",
+    down: "ArrowDown",
+    left: "ArrowLeft",
+    right: "ArrowRight",
+  } as const;
+  await page.keyboard.press(keys[direction]);
+}
+
 async function startGame(page: Page): Promise<void> {
   await page.getByTestId("start-button").click();
+  const countrySelector = page.getByTestId("country-selector");
+  if (await countrySelector.isVisible()) {
+    await page.getByTestId("country-ES").click();
+    await page.getByTestId("confirm-country").click();
+  }
   const onboarding = page.getByTestId("onboarding");
   if (await onboarding.isVisible()) {
     await expect(onboarding).toContainText("Come memes");
@@ -68,6 +97,33 @@ test.beforeEach(async ({ page }) => {
       value: undefined,
     });
   });
+});
+
+test("elige y conserva país antes de cargar el mundo local", async ({
+  page,
+}) => {
+  const runtime = watchRuntime(page);
+  await page.goto("/");
+
+  await page.getByTestId("start-button").click();
+  await expect(page.getByTestId("country-selector")).toBeVisible();
+  await page.getByTestId("country-JP").click();
+  await page.getByTestId("confirm-country").click();
+  await expect(page.getByTestId("onboarding")).toBeVisible();
+  await page.getByTestId("onboarding-start").click();
+  await expect(page.locator(".canvas-shell canvas")).toHaveCount(1);
+  await expect(page.getByTestId("quality-indicator")).toContainText("Caos");
+
+  await page.getByTestId("home-button").click();
+  await page.getByTestId("confirm-exit-button").click();
+  await page.reload();
+  await expect(page.getByTestId("start-screen")).toBeVisible();
+  await expect(page.getByTestId("quality-indicator")).toContainText("🇯🇵");
+  await expect(page.getByText(/Japón/)).toBeVisible();
+
+  expect(runtime.consoleErrors).toEqual([]);
+  expect(runtime.pageErrors).toEqual([]);
+  expect([...runtime.externalRequests]).toEqual([]);
 });
 
 test("completa, comparte y conserva una partida local", async ({
@@ -127,7 +183,7 @@ test("completa, comparte y conserva una partida local", async ({
   await page.getByTestId("share-button").click();
   await expect(page.getByTestId("share-result")).toBeVisible();
   await expect(page.locator("#share-text")).toHaveValue(
-    /He conseguido 0 puntos en Meme Evolution Snake.*Evolución: Mini Bicho Meme.*¿Puedes superar mi resultado\?/s,
+    /He conseguido \d+ puntos en Meme Evolution Snake.*Evolución: Mini Bicho Meme.*¿Puedes superar mi resultado\?/s,
   );
 
   await page.getByTestId("restart-button").click();
@@ -280,6 +336,65 @@ test("pausa, cancela y sale de una partida limpiando el motor", async ({
   await expect(page.getByTestId("start-screen")).toBeVisible();
   await expect(page.getByTestId("exit-confirmation")).toBeHidden();
   await expect(page.locator(".canvas-shell canvas")).toHaveCount(0);
+
+  expect(runtime.consoleErrors).toEqual([]);
+  expect(runtime.pageErrors).toEqual([]);
+  expect([...runtime.externalRequests]).toEqual([]);
+});
+
+test("mantiene una cadencia estable con el mundo vivo", async ({
+  page,
+}, testInfo) => {
+  const runtime = watchRuntime(page);
+  await page.goto("/?seed=812");
+  await startGame(page);
+  const isMobile = testInfo.project.name === "chromium-mobile";
+  await turn(page, "up", isMobile);
+
+  const metricsPromise = page.evaluate(
+    () =>
+      new Promise<{ averageMs: number; p95Ms: number; maximumMs: number }>(
+        (resolve) => {
+          const browser = globalThis as unknown as {
+            performance: { now(): number };
+            requestAnimationFrame(callback: (now: number) => void): number;
+          };
+          const deltas: number[] = [];
+          let previous = browser.performance.now();
+          const sample = (now: number) => {
+            deltas.push(now - previous);
+            previous = now;
+            if (deltas.length < 120) {
+              browser.requestAnimationFrame(sample);
+              return;
+            }
+            const sorted = [...deltas].sort((a, b) => a - b);
+            resolve({
+              averageMs:
+                deltas.reduce((total, value) => total + value, 0) /
+                deltas.length,
+              p95Ms: sorted[Math.floor(sorted.length * 0.95)]!,
+              maximumMs: sorted.at(-1)!,
+            });
+          };
+          browser.requestAnimationFrame(sample);
+        },
+      ),
+  );
+
+  await page.waitForTimeout(450);
+  await turn(page, "left", isMobile);
+  await page.waitForTimeout(450);
+  await turn(page, "down", isMobile);
+  await page.waitForTimeout(450);
+  await turn(page, "right", isMobile);
+  const metrics = await metricsPromise;
+  console.log(
+    `${testInfo.project.name}: ${metrics.averageMs.toFixed(2)} ms media, ${metrics.p95Ms.toFixed(2)} ms p95, ${metrics.maximumMs.toFixed(2)} ms máximo`,
+  );
+  expect(metrics.averageMs).toBeLessThan(35);
+  expect(metrics.p95Ms).toBeLessThan(50);
+  await expect(page.locator(".canvas-shell canvas")).toHaveCount(1);
 
   expect(runtime.consoleErrors).toEqual([]);
   expect(runtime.pageErrors).toEqual([]);

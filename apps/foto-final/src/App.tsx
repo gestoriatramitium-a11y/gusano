@@ -2,12 +2,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { SynthAudio } from "./audio/SynthAudio";
 import { DebugPanel } from "./components/DebugPanel";
+import { CountrySelector } from "./components/CountrySelector";
 import { GameCanvas, type GameController } from "./components/GameCanvas";
 import { OnboardingOverlay } from "./components/OnboardingOverlay";
 import { ProgressPanel } from "./components/ProgressPanel";
 import { ResultScreen } from "./components/ResultScreen";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { ACHIEVEMENT_CATALOG, MISSION_CATALOG } from "./core/challenges";
+import {
+  DEFAULT_COUNTRY_CODE,
+  getCountry,
+  type CountryCode,
+} from "./core/countries";
 import {
   EVOLUTIONS,
   FOOD_CATALOG,
@@ -41,12 +47,14 @@ import {
   type ResultContext,
 } from "./core/results";
 import { shareResultText } from "./utils/shareResult";
+import type { WorldNotification } from "./core/world";
 
 const LEGACY_BEST_SCORE_KEY = "meme-evolution-snake:best-score";
 const PREVIOUS_PLAYER_PROGRESS_KEY = "meme-evolution-snake:player-progress:v1";
 const SECOND_PLAYER_PROGRESS_KEY = "meme-evolution-snake:player-progress:v2";
 const PLAYER_PROGRESS_KEY = "meme-evolution-snake:player-progress:v3";
-const PLAYER_PREFERENCES_KEY = "meme-evolution-snake:preferences:v1";
+const PREVIOUS_PLAYER_PREFERENCES_KEY = "meme-evolution-snake:preferences:v1";
+const PLAYER_PREFERENCES_KEY = "meme-evolution-snake:preferences:v2";
 
 const EAT_MESSAGES = [
   "¡Ese meme estaba delicioso!",
@@ -55,7 +63,8 @@ const EAT_MESSAGES = [
   "¡ÑAM! La ciencia no puede explicarlo.",
 ] as const;
 
-type Screen = "start" | "onboarding" | "playing" | "game-over";
+type Screen =
+  "start" | "country-select" | "onboarding" | "playing" | "game-over";
 
 interface UnlockNotice {
   readonly id: string;
@@ -78,7 +87,10 @@ function readPlayerProgress(): PlayerProgress {
 
 function readPlayerPreferences(): PlayerPreferences {
   try {
-    return parsePlayerPreferences(localStorage.getItem(PLAYER_PREFERENCES_KEY));
+    return parsePlayerPreferences(
+      localStorage.getItem(PLAYER_PREFERENCES_KEY) ??
+        localStorage.getItem(PREVIOUS_PLAYER_PREFERENCES_KEY),
+    );
   } catch {
     return DEFAULT_PLAYER_PREFERENCES;
   }
@@ -159,6 +171,7 @@ export function App() {
   const celebrationTimer = useRef<number | null>(null);
   const runRecorded = useRef(false);
   const pendingStart = useRef(false);
+  const countrySelectionStartsRun = useRef(false);
   const progressRef = useRef(progress);
   const audio = useRef<SynthAudio | null>(null);
 
@@ -293,6 +306,20 @@ export function App() {
     [announce, reduceMotion],
   );
 
+  const handleWorldEvent = useCallback(
+    (event: WorldNotification) => {
+      if (event.type === "event-started") {
+        announce(`¡EVENTO MUNDIAL! ${event.name}`, 2600);
+      } else if (event.type === "event-ended") {
+        announce("El mundo vuelve a su nivel normal de absurdo.");
+      } else {
+        const country = getCountry(event.countryCode);
+        announce(`${country.flag} ${event.botName} te robó el meme.`);
+      }
+    },
+    [announce],
+  );
+
   const beginRun = useCallback(
     (gameController: GameController) => {
       audio.current ??= new SynthAudio();
@@ -319,6 +346,11 @@ export function App() {
   }, [beginRun, controller]);
 
   const requestStart = useCallback(() => {
+    if (!preferences.countryCode) {
+      countrySelectionStartsRun.current = true;
+      setScreen("country-select");
+      return;
+    }
     setEngineError(false);
     setEngineRequested(true);
     if (!preferences.tutorialSeen) {
@@ -327,10 +359,36 @@ export function App() {
     }
     if (controller) beginRun(controller);
     else pendingStart.current = true;
-  }, [beginRun, controller, preferences.tutorialSeen]);
+  }, [beginRun, controller, preferences.countryCode, preferences.tutorialSeen]);
+
+  const chooseCountry = useCallback(
+    (countryCode: CountryCode) => {
+      setPreferences((current) => ({ ...current, countryCode }));
+      if (!countrySelectionStartsRun.current) {
+        setScreen("start");
+        return;
+      }
+
+      countrySelectionStartsRun.current = false;
+      setEngineError(false);
+      setEngineRequested(true);
+      if (!preferences.tutorialSeen) {
+        setScreen("onboarding");
+      } else {
+        pendingStart.current = true;
+      }
+    },
+    [preferences.tutorialSeen],
+  );
+
+  const requestCountryChange = useCallback(() => {
+    countrySelectionStartsRun.current = false;
+    setScreen("country-select");
+  }, []);
 
   const returnToStart = useCallback(() => {
     pendingStart.current = false;
+    countrySelectionStartsRun.current = false;
     runRecorded.current = false;
     if (announcementTimer.current !== null) {
       window.clearTimeout(announcementTimer.current);
@@ -374,10 +432,15 @@ export function App() {
   }, [beginRun, controller]);
 
   const showTutorial = useCallback(() => {
+    if (!preferences.countryCode) {
+      countrySelectionStartsRun.current = true;
+      setScreen("country-select");
+      return;
+    }
     pendingStart.current = false;
     setEngineRequested(true);
     setScreen("onboarding");
-  }, []);
+  }, [preferences.countryCode]);
 
   const changeDirection = useCallback(
     (direction: Direction) => controller?.changeDirection(direction),
@@ -489,7 +552,7 @@ export function App() {
               <span className="status-pill" data-testid="quality-indicator">
                 {screen === "playing"
                   ? `Caos ${Math.min(99, (snapshot?.difficultyLevel ?? 0) + 1)} · ${effectiveQuality === "reduced" ? "Eco" : "Normal"}`
-                  : "Modo local"}
+                  : `${getCountry(preferences.countryCode ?? DEFAULT_COUNTRY_CODE).flag} Modo local`}
               </span>
             </div>
           </header>
@@ -566,11 +629,13 @@ export function App() {
                 onController={handleController}
                 onEvent={handleEvent}
                 onSnapshot={handleSnapshot}
+                onWorldEvent={handleWorldEvent}
                 onQualityChange={setEffectiveQuality}
                 onLoadError={() => setEngineError(true)}
                 qualityPreference={preferences.graphicsQuality}
                 effectiveQuality={effectiveQuality}
                 reduceMotion={reduceMotion}
+                countryCode={preferences.countryCode ?? DEFAULT_COUNTRY_CODE}
               />
             ) : (
               <div className="canvas-shell canvas-shell--deferred" />
@@ -705,10 +770,20 @@ export function App() {
                         }))
                       }
                       onShowTutorial={showTutorial}
+                      onChooseCountry={requestCountryChange}
                     />
                   </div>
                 </div>
               </div>
+            )}
+
+            {screen === "country-select" && (
+              <CountrySelector
+                currentCountryCode={preferences.countryCode}
+                canCancel={preferences.countryCode !== null}
+                onCancel={() => setScreen("start")}
+                onConfirm={chooseCountry}
+              />
             )}
 
             {screen === "onboarding" && (

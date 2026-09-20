@@ -9,6 +9,7 @@ import {
   getEvolution,
   getTickMs,
   queueDirection,
+  relocateFood,
   restart,
   selectFoodKind,
   start,
@@ -121,6 +122,18 @@ describe("estado y aleatoriedad determinista", () => {
   it("valida las dimensiones mínimas del tablero", () => {
     expect(() => createInitialState(1, { width: 7 })).toThrow(RangeError);
     expect(() => createInitialState(1, { height: 5 })).toThrow(RangeError);
+  });
+
+  it("reubica comida reclamada por bots sin tocar puntos ni experiencia", () => {
+    const initial = createInitialState(77);
+    const blocked = [initial.food.position, { x: 0, y: 0 }, { x: 1, y: 0 }];
+    const relocated = relocateFood(initial, blocked);
+    expect(relocated.food.position).not.toEqual(initial.food.position);
+    expect(blocked).not.toContainEqual(relocated.food.position);
+    expect(relocated.snake).not.toContainEqual(relocated.food.position);
+    expect(relocated.score).toBe(initial.score);
+    expect(relocated.experience).toBe(initial.experience);
+    expect(relocateFood(initial, blocked)).toEqual(relocated);
   });
 });
 

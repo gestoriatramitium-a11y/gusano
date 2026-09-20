@@ -3,6 +3,7 @@ import type {
   GraphicsQualityPreference,
   PlayerPreferences,
 } from "../core/preferences";
+import { getCountry } from "../core/countries";
 
 interface SettingsPanelProps {
   readonly preferences: PlayerPreferences;
@@ -11,6 +12,7 @@ interface SettingsPanelProps {
   readonly onQualityChange: (quality: GraphicsQualityPreference) => void;
   readonly onReduceMotionChange: (reduced: boolean) => void;
   readonly onShowTutorial: () => void;
+  readonly onChooseCountry: () => void;
 }
 
 export function SettingsPanel({
@@ -20,13 +22,32 @@ export function SettingsPanel({
   onQualityChange,
   onReduceMotionChange,
   onShowTutorial,
+  onChooseCountry,
 }: SettingsPanelProps) {
+  const country = preferences.countryCode
+    ? getCountry(preferences.countryCode)
+    : null;
   return (
     <section className="settings-panel" aria-labelledby="settings-title">
       <div className="settings-panel__heading">
         <h3 id="settings-title">Experiencia</h3>
         <button type="button" onClick={onShowTutorial}>
           Cómo jugar
+        </button>
+      </div>
+      <div className="setting-row">
+        <span>
+          País
+          <small>
+            {country ? `${country.flag} ${country.name}` : "Sin elegir"}
+          </small>
+        </span>
+        <button
+          type="button"
+          onClick={onChooseCountry}
+          data-testid="change-country"
+        >
+          Cambiar
         </button>
       </div>
       <label className="setting-row">

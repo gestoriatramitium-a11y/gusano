@@ -24,6 +24,12 @@ Esta matriz relaciona cada requisito con su implementación y con la evidencia e
 | Salida confirmada al menú                  | `src/App.tsx`, `GameCanvas.tsx`, `MemeSnakeScene.ts`                         | Pausa, cancelación, desmontaje y remontaje en Playwright        |
 | Onboarding de primer uso                   | `src/components/OnboardingOverlay.tsx`, `src/core/preferences.ts`            | E2E de tutorial, foco y reapertura desde Ajustes                |
 | Movimiento reducido y calidad adaptable    | `src/core/preferences.ts`, `MemeSnakeScene.ts`, `SettingsPanel.tsx`          | E2E de persistencia y perfil sintético de CPU                   |
+| Selección y persistencia de país           | `countries.ts`, `preferences.ts`, `CountrySelector.tsx`                      | `world.test.ts`, `preferences.test.ts` y Playwright             |
+| Bandera sobre jugador y bots               | `MemeSnakeScene.ts`, `countries.ts`                                          | Unitarias de identidad, E2E de país e inspección visual         |
+| Bots con tamaño y personalidad             | `world.ts`, `worldConfig.ts`                                                 | `tests/unit/world.test.ts`                                      |
+| IA local determinista                      | `world.ts`                                                                   | Pruebas de semilla, movimiento, límites y comida compartida     |
+| Cuatro biomas y decoración procedural      | `world.ts`, `worldConfig.ts`, `MemeSnakeScene.ts`                            | Unitarias de cuadrantes/conteo e inspección visual              |
+| Cuatro eventos del mapa                    | `world.ts`, `worldConfig.ts`, `MemeSnakeScene.ts`                            | Pruebas de inicio, finalización y catálogo completo             |
 | Resultado final detallado y nuevo récord   | `src/components/ResultScreen.tsx`, `src/core/results.ts`                     | `tests/unit/results.test.ts`, recorrido E2E e inspección visual |
 | Frases meme según rendimiento              | Catálogo y reglas en `src/core/results.ts`                                   | `tests/unit/results.test.ts`                                    |
 | Web Share y fallback al portapapeles       | `src/utils/shareResult.ts`, `src/App.tsx`                                    | `tests/unit/shareResult.test.ts` y recorrido E2E                |

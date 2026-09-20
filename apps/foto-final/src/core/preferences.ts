@@ -1,4 +1,6 @@
-export const PLAYER_PREFERENCES_VERSION = 1 as const;
+import { isCountryCode, type CountryCode } from "./countries";
+
+export const PLAYER_PREFERENCES_VERSION = 2 as const;
 
 export type GraphicsQualityPreference = "auto" | "normal" | "reduced";
 export type EffectiveGraphicsQuality = "normal" | "reduced";
@@ -8,6 +10,7 @@ export interface PlayerPreferences {
   readonly tutorialSeen: boolean;
   readonly reduceMotion: boolean;
   readonly graphicsQuality: GraphicsQualityPreference;
+  readonly countryCode: CountryCode | null;
 }
 
 export interface DeviceSignals {
@@ -22,6 +25,7 @@ export const DEFAULT_PLAYER_PREFERENCES: PlayerPreferences = Object.freeze({
   tutorialSeen: false,
   reduceMotion: false,
   graphicsQuality: "auto",
+  countryCode: null,
 });
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -38,7 +42,7 @@ export function parsePlayerPreferences(
   if (!serialized) return DEFAULT_PLAYER_PREFERENCES;
   try {
     const parsed: unknown = JSON.parse(serialized);
-    if (!isRecord(parsed) || parsed.version !== PLAYER_PREFERENCES_VERSION) {
+    if (!isRecord(parsed) || (parsed.version !== 1 && parsed.version !== 2)) {
       return DEFAULT_PLAYER_PREFERENCES;
     }
     return {
@@ -48,6 +52,9 @@ export function parsePlayerPreferences(
       graphicsQuality: isGraphicsQuality(parsed.graphicsQuality)
         ? parsed.graphicsQuality
         : "auto",
+      countryCode: isCountryCode(parsed.countryCode)
+        ? parsed.countryCode
+        : null,
     };
   } catch {
     return DEFAULT_PLAYER_PREFERENCES;
