@@ -9,6 +9,7 @@ import {
   occupiedByWorld,
   stepWorld,
   worldEventName,
+  type WorldDrop,
   type WorldState,
 } from "../../src/core/world";
 import {
@@ -48,6 +49,18 @@ describe("países e identidad local", () => {
 describe("mundo determinista", () => {
   it("crea los mismos bots y decoraciones con la misma semilla", () => {
     expect(createWorld(901)).toEqual(createWorld(901));
+  });
+
+  it("normaliza semillas inválidas y puede iniciar un mundo en el borde", () => {
+    const world = createWorldState(Number.NaN, {
+      width: 24,
+      height: 16,
+      quality: "reduced",
+      playerCountryCode: "ES",
+      playerSnake: [{ x: 0, y: 0 }],
+    });
+    expect(world.seed).toBe(1);
+    expect(world.drops.length).toBeGreaterThan(0);
   });
 
   it("adapta bots y decoración a la calidad gráfica", () => {
@@ -196,6 +209,41 @@ describe("mundo determinista", () => {
     expect(result.state.bots[0]!.snake[0]).toEqual({ x: 15, y: 10 });
   });
 
+  it("transporta también cuando el bot entra por el segundo portal", () => {
+    const base = createWorld(511, "reduced");
+    const bot = {
+      ...base.bots[0]!,
+      snake: [
+        { x: 14, y: 10 },
+        { x: 13, y: 10 },
+      ],
+      direction: "right" as const,
+      phase: 0,
+      invulnerableUntilMs: 0,
+    };
+    const result = stepWorld(
+      {
+        ...base,
+        bots: [bot],
+        drops: [],
+        ticks: 0,
+        activeEvent: {
+          kind: "portals",
+          startedAtMs: 0,
+          endsAtMs: 10_000,
+          portals: { a: { x: 6, y: 5 }, b: { x: 15, y: 10 } },
+        },
+        nextEventAtMs: Number.MAX_SAFE_INTEGER,
+      },
+      {
+        elapsedMs: 1,
+        playerSnake: [{ x: 30, y: 30 }],
+        food: { kind: "flying-pizza", position: { x: 15, y: 10 } },
+      },
+    );
+    expect(result.state.bots[0]!.snake[0]).toEqual({ x: 6, y: 5 });
+  });
+
   it("cancela un portal si el cuerpo quedaría fuera del mapa", () => {
     const base = createWorld(52, "reduced");
     const bot = {
@@ -235,7 +283,7 @@ describe("mundo determinista", () => {
     ).toBe(true);
   });
 
-  it("deja quieto un bot rodeado sin producir posiciones inválidas", () => {
+  it("resuelve un bot sin salida contra cuerpos rivales sin producir posiciones inválidas", () => {
     const base = createWorld(61, "reduced");
     const bot = {
       ...base.bots[0]!,
@@ -243,17 +291,20 @@ describe("mundo determinista", () => {
       direction: "right" as const,
       tier: "small" as const,
       phase: 0,
+      invulnerableUntilMs: 0,
     };
     const world: WorldState = { ...base, bots: [bot], ticks: 0 };
     const result = stepWorld(world, {
-      elapsedMs: 1,
+      elapsedMs: 4_000,
       playerSnake: [
+        { x: 30, y: 30 },
         { x: 1, y: 0 },
         { x: 0, y: 1 },
       ],
-      food: player.food,
+      food: { kind: "flying-pizza", position: { x: 10, y: 10 } },
     });
-    expect(result.state.bots[0]).toEqual(bot);
+    expect(result.state.bots[0]).toBeUndefined();
+    expect(result.state.deaths).toHaveLength(1);
   });
 
   it("expone nombres configurados para eventos y evolución de bots", () => {
@@ -266,5 +317,148 @@ describe("mundo determinista", () => {
       "Gusano Legendario",
     );
     expect(botEvolutionName({ ...base, tier: "giant" })).toBe("Monstruo Meme");
+  });
+
+  it("protege al jugador al aparecer y detecta cabeza contra cuerpo rival después", () => {
+    const base = createWorld(91, "reduced");
+    const bot = {
+      ...base.bots[0]!,
+      snake: [
+        { x: 12, y: 12 },
+        { x: 11, y: 12 },
+      ],
+      invulnerableUntilMs: 0,
+    };
+    const world: WorldState = {
+      ...base,
+      bots: [bot],
+      drops: [],
+      nextEventAtMs: Number.MAX_SAFE_INTEGER,
+    };
+    const playerSnake = [
+      { x: 11, y: 12 },
+      { x: 10, y: 12 },
+    ];
+    const protectedResult = stepWorld(world, {
+      elapsedMs: 1_000,
+      playerSnake,
+      food: { kind: "flying-pizza", position: { x: 40, y: 40 } },
+    });
+    expect(protectedResult.playerCollision).toBeNull();
+
+    const exposedResult = stepWorld(world, {
+      elapsedMs: 4_000,
+      playerSnake,
+      food: { kind: "flying-pizza", position: { x: 40, y: 40 } },
+    });
+    expect(exposedResult.playerCollision?.id).toBe(bot.id);
+  });
+
+  it("elimina un bot que impacta contra un cuerpo rival y deja restos limitados", () => {
+    const base = createWorld(92, "reduced");
+    const bot = {
+      ...base.bots[0]!,
+      snake: [{ x: 0, y: 0 }],
+      direction: "right" as const,
+      invulnerableUntilMs: 0,
+      phase: 0,
+    };
+    const world: WorldState = {
+      ...base,
+      bots: [bot],
+      drops: [],
+      ticks: 0,
+      nextEventAtMs: Number.MAX_SAFE_INTEGER,
+    };
+    const result = stepWorld(world, {
+      elapsedMs: 4_000,
+      playerSnake: [
+        { x: 30, y: 30 },
+        { x: 1, y: 0 },
+        { x: 0, y: 1 },
+      ],
+      food: { kind: "flying-pizza", position: { x: 40, y: 40 } },
+    });
+
+    expect(result.state.bots).toHaveLength(0);
+    expect(result.state.deaths).toHaveLength(1);
+    expect(
+      result.state.drops.filter((drop) => drop.source === "remains"),
+    ).toHaveLength(WORLD_CONFIG.drops.smallCount);
+    expect(result.notifications).toContainEqual(
+      expect.objectContaining({ type: "bot-eliminated", botId: bot.id }),
+    );
+  });
+
+  it.each([
+    ["medium", WORLD_CONFIG.drops.mediumCount, "lost-robot"],
+    ["giant", WORLD_CONFIG.drops.giantCount, "legendary-potato"],
+  ] as const)(
+    "deja la cantidad y rareza configuradas cuando cae un bot %s",
+    (tier, count, firstKind) => {
+      const base = createWorld(94 + (tier === "giant" ? 1 : 0), "reduced");
+      const bot = {
+        ...base.bots[0]!,
+        tier,
+        snake: [{ x: 0, y: 0 }],
+        direction: "right" as const,
+        invulnerableUntilMs: 0,
+        phase: 0,
+      };
+      const result = stepWorld(
+        {
+          ...base,
+          bots: [bot],
+          drops: [],
+          nextEventAtMs: Number.MAX_SAFE_INTEGER,
+        },
+        {
+          elapsedMs: 4_000,
+          playerSnake: [
+            { x: 30, y: 30 },
+            { x: 1, y: 0 },
+            { x: 0, y: 1 },
+          ],
+          food: { kind: "flying-pizza", position: { x: 40, y: 40 } },
+        },
+      );
+      const remains = result.state.drops.filter(
+        (drop) => drop.source === "remains",
+      );
+      expect(remains).toHaveLength(count);
+      expect(remains[0]!.kind).toBe(firstKind);
+    },
+  );
+
+  it("expone restos como recompensa coleccionable del jugador", () => {
+    const base = createWorld(93, "reduced");
+    const drop: WorldDrop = {
+      id: "drop-remains-test",
+      position: { x: 30, y: 30 },
+      kind: "cringe-energy",
+      points: 18,
+      experience: 9,
+      growth: 1,
+      source: "remains",
+      expiresAtMs: 30_000,
+    };
+    const result = stepWorld(
+      {
+        ...base,
+        bots: [],
+        drops: [drop],
+        nextEventAtMs: Number.MAX_SAFE_INTEGER,
+      },
+      {
+        elapsedMs: 4_000,
+        playerSnake: [{ x: 30, y: 30 }],
+        food: { kind: "flying-pizza", position: { x: 40, y: 40 } },
+      },
+    );
+
+    expect(result.collectedDrops).toEqual([drop]);
+    expect(
+      result.state.drops.some((candidate) => candidate.id === drop.id),
+    ).toBe(false);
   });
 });

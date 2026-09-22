@@ -1,7 +1,7 @@
 export const GAME_BALANCE = Object.freeze({
   board: Object.freeze({
-    width: 24,
-    height: 16,
+    width: 72,
+    height: 48,
     minimumWidth: 8,
     minimumHeight: 6,
   }),

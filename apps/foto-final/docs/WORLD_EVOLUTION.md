@@ -8,13 +8,13 @@ World Evolution añade competición simulada completamente local. No existe red,
 
 `src/core/world.ts` mantiene el estado puro del mundo y `src/core/worldConfig.ts` concentra sus parámetros. La misma semilla, estado del jugador y tiempo producen el mismo resultado.
 
-Hay tres tamaños:
+Hay tres tamaños, con ritmos y límites distintos:
 
-| Tipo    | Longitud inicial | Cadencia | Escala visual |
-| ------- | ---------------- | -------- | ------------- |
-| Pequeño | 4                | 2 ticks  | 0,72          |
-| Medio   | 7                | 2 ticks  | 0,92          |
-| Gigante | 10               | 3 ticks  | 1,15          |
+| Tipo    | Longitud inicial | Máximo | Cadencia | Escala visual |
+| ------- | ---------------- | ------ | -------- | ------------- |
+| Pequeño | 4                | 11     | 1 tick   | 0,72          |
+| Medio   | 7                | 19     | 2 ticks  | 0,92          |
+| Gigante | 10               | 32     | 3 ticks  | 1,36          |
 
 Cada agente recibe nombre, país, bandera y uno de cuatro perfiles:
 
@@ -23,9 +23,15 @@ Cada agente recibe nombre, país, bandera y uno de cuatro perfiles:
 - **Cobarde:** pondera con fuerza paredes, cuerpos y distancia de seguridad.
 - **Equilibrado:** combina alimento, espacio y seguridad.
 
-La decisión evalúa primero movimientos legales, paredes, cuerpo propio, otros bots y jugador. Después puntúa seguridad, cercanía de comida, distancia al jugador y exploración. Los bots pueden recoger el mismo objeto visible que persigue el jugador; al hacerlo crecen, generan un aviso y el núcleo del jugador reubica la comida sin alterar sus puntos ni su XP. No son obstáculos letales para el jugador en esta fase, evitando introducir una regla de derrota nueva sin telemetría de balance.
+La decisión evalúa primero movimientos legales, paredes, cuerpos rivales y jugador. Después puntúa seguridad, cercanía de comida, distancia al jugador y exploración. Los bots pueden recoger comida ambiental y restos de una muerte; sus parámetros de riesgo, tamaño y oportunidad están centralizados en `worldConfig.ts`. Los agentes lejanos avanzan a media cadencia para mantener estable el coste de CPU.
 
-En calidad normal se simulan seis bots; en reducida, tres. Una invasión añade hasta dos rivales temporales con un máximo global de ocho.
+En calidad normal se simulan doce bots; en reducida, seis. Una invasión añade hasta cuatro rivales temporales con un máximo global de dieciséis. Cada aparición tiene 3,5 segundos de protección.
+
+## Colisiones, muertes y restos
+
+La regla competitiva es simétrica y determinista: una cabeza que entra en el cuerpo de otro gusano elimina al gusano que impacta. Los choques cabeza contra cabeza, cuerpo contra cuerpo, proximidad y la propia estela no provocan derrota. El jugador conserva protección de aparición durante 3,5 segundos.
+
+Cuando cae un bot, `world.ts` crea una explosión visual breve y deja restos con recompensas limitadas según el tamaño: 4, 7 u 11 objetos. Cada resto tiene puntos, XP, crecimiento, rareza, caducidad y fuente (`remains`), y el jugador los recoge mediante el mismo sistema de eventos que la comida normal. La bolsa ambiental está limitada a 56 objetos y se repone de forma determinista.
 
 ## Países e identidad
 
@@ -35,14 +41,14 @@ La bandera del jugador se dibuja sobre la cabeza, acompaña la interpolación y 
 
 ## Mundo y biomas
 
-El tablero conserva las reglas y colisiones deterministas del Snake existente, pero se presenta como cuatro zonas:
+El tablero lógico es de 72 × 48 celdas, mayor que el viewport. `src/game/worldCamera.ts` mantiene una escala de 30 px por celda, limita el scroll a los bordes y sigue la cabeza con interpolación de cámara; el HUD React permanece fijo fuera del canvas. El tablero se presenta como cuatro zonas:
 
 1. **Pradera Meme:** vegetación, flores y piedras.
 2. **Ciudad Fast Food:** carteles, patatas fritas y residuos urbanos.
 3. **Laboratorio Cringe:** matraces, antenas y ambiente tecnológico.
 4. **Zona Caos:** cristales, glitches y colores inestables.
 
-La decoración se genera una vez por semilla y se dibuja en una capa estática. Hay 36 elementos en calidad normal y 18 en reducida. Las capas dinámicas separan efectos mundiales, bots, objetos y jugador para evitar recrear objetos Phaser cada frame; las etiquetas se reutilizan.
+La decoración se genera una vez por semilla y se dibuja solo dentro de la ventana visible. Hay 150 elementos en calidad normal y 72 en reducida. Las capas dinámicas separan efectos mundiales, bots, objetos, restos y jugador para evitar recrear objetos Phaser cada frame; las etiquetas se reutilizan y los bots lejanos se omiten visualmente.
 
 ## Eventos
 
@@ -57,10 +63,10 @@ Cada evento tiene duración, nombre y color propios. Al finalizar se limpian por
 
 ## Rendimiento y límites
 
-- **Auto:** elige normal o reducida según CPU, memoria, densidad y puntero táctil.
-- **Normal:** seis bots, 36 decoraciones y efectos completos.
-- **Reducida:** tres bots, 18 decoraciones y menos etiquetas/partículas.
-- El mundo tiene un máximo de ocho bots y no crea timers independientes: avanza con el mismo tick controlado por la escena.
+- **Auto:** cambia a reducida si la cadencia media cae por debajo del umbral configurado.
+- **Normal:** doce bots, 150 decoraciones, restos completos y etiquetas reutilizadas.
+- **Reducida:** seis bots, 72 decoraciones, menos partículas y etiquetas ocultas.
+- El mundo tiene un máximo de dieciséis bots y no crea timers independientes: avanza con el mismo tick controlado por la escena.
 - Todo el dibujo usa Canvas, texto y primitivas locales; no se descargan banderas ni assets externos.
 
 La siguiente iteración debería medir sesiones reales locales para ajustar densidad, legibilidad de etiquetas y agresividad. Ranking online, cuentas, backend, monetización y multijugador siguen fuera de alcance.

@@ -109,7 +109,14 @@ export interface GameOptions {
   readonly height?: number;
 }
 
-export type CollisionKind = "wall" | "self";
+export type CollisionKind = "wall" | "self" | "enemy";
+
+export interface ExternalReward {
+  readonly kind: FoodKind;
+  readonly points: number;
+  readonly experience: number;
+  readonly growth: number;
+}
 
 export type GameEvent =
   | { readonly type: "started"; readonly tick: number }
@@ -512,12 +519,6 @@ export function step(inputState: GameState): StepResult {
     return gameOver(stateAtTick, tick, elapsedMs, "wall", nextHead, events);
   }
 
-  const bodyThatRemains =
-    state.growthPending > 0 ? state.snake : state.snake.slice(0, -1);
-  if (bodyThatRemains.some((position) => samePosition(position, nextHead))) {
-    return gameOver(stateAtTick, tick, elapsedMs, "self", nextHead, events);
-  }
-
   const ate = samePosition(nextHead, state.food.position);
   const definition = ate ? FOOD_CATALOG[state.food.kind] : null;
   const growsThisTick = ate || state.growthPending > 0;
@@ -618,6 +619,68 @@ export function step(inputState: GameState): StepResult {
       ticks: tick,
       elapsedMs,
       fastestTickMs: stateAtTick.fastestTickMs,
+    },
+    events,
+  };
+}
+
+export function endFromEnemyCollision(
+  state: GameState,
+  at: Position,
+): StepResult {
+  if (state.status !== "playing") return { state, events: [] };
+  return gameOver(state, state.ticks, state.elapsedMs, "enemy", at, []);
+}
+
+export function collectExternalReward(
+  state: GameState,
+  reward: ExternalReward,
+): StepResult {
+  if (state.status !== "playing") return { state, events: [] };
+  const definition = FOOD_CATALOG[reward.kind];
+  const multiplier = state.activeEffects.some(
+    (effect) =>
+      effect.kind === "double-points" && effect.expiresAtMs > state.elapsedMs,
+  )
+    ? 2
+    : 1;
+  const awardedPoints = reward.points * multiplier;
+  const experience = state.experience + reward.experience;
+  const evolution = evolutionFor(experience);
+  const events: GameEvent[] = [
+    {
+      type: "ate",
+      tick: state.ticks,
+      kind: reward.kind,
+      rarity: definition.rarity,
+      basePoints: reward.points,
+      multiplier,
+      points: awardedPoints,
+      score: state.score + awardedPoints,
+      experience: reward.experience,
+      growth: reward.growth,
+    },
+  ];
+  if (evolution.id !== state.evolutionId) {
+    events.push({
+      type: "evolved",
+      tick: state.ticks,
+      from: state.evolutionId,
+      to: evolution.id,
+    });
+  }
+  return {
+    state: {
+      ...state,
+      score: state.score + awardedPoints,
+      eaten: state.eaten + 1,
+      experience,
+      collectedByRarity: {
+        ...state.collectedByRarity,
+        [definition.rarity]: state.collectedByRarity[definition.rarity] + 1,
+      },
+      growthPending: state.growthPending + Math.max(0, reward.growth),
+      evolutionId: evolution.id,
     },
     events,
   };

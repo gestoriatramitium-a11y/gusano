@@ -312,9 +312,16 @@ export function App() {
         announce(`¡EVENTO MUNDIAL! ${event.name}`, 2600);
       } else if (event.type === "event-ended") {
         announce("El mundo vuelve a su nivel normal de absurdo.");
-      } else {
+      } else if (event.type === "food-claimed") {
         const country = getCountry(event.countryCode);
         announce(`${country.flag} ${event.botName} te robó el meme.`);
+      } else {
+        const country = getCountry(event.countryCode);
+        audio.current?.playElimination();
+        announce(
+          `💥 ${country.flag} ${event.botName} explotó: ¡sus memes quedan libres!`,
+          2200,
+        );
       }
     },
     [announce],
@@ -644,7 +651,7 @@ export function App() {
             <p className="sr-only" id="game-instructions">
               Controla la serpiente con flechas o WASD. En móvil, desliza o usa
               los cuatro botones. Recoge memes para ganar puntos y experiencia;
-              evita las paredes y tu propio cuerpo.
+              evita las paredes y el cuerpo de los gusanos rivales.
             </p>
 
             {announcement && screen === "playing" && (

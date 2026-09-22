@@ -19,6 +19,7 @@ export type DecorationKind =
 
 export interface BotTierConfig {
   readonly initialLength: number;
+  readonly maximumLength: number;
   readonly moveEveryTicks: number;
   readonly bodyScale: number;
   readonly reward: number;
@@ -44,20 +45,23 @@ export const BOT_TIERS: Readonly<Record<BotTier, BotTierConfig>> =
   Object.freeze({
     small: Object.freeze({
       initialLength: 4,
-      moveEveryTicks: 2,
+      maximumLength: 11,
+      moveEveryTicks: 1,
       bodyScale: 0.72,
       reward: 1,
     }),
     medium: Object.freeze({
       initialLength: 7,
+      maximumLength: 19,
       moveEveryTicks: 2,
       bodyScale: 0.92,
       reward: 2,
     }),
     giant: Object.freeze({
       initialLength: 10,
+      maximumLength: 32,
       moveEveryTicks: 3,
-      bodyScale: 1.15,
+      bodyScale: 1.36,
       reward: 4,
     }),
   });
@@ -172,9 +176,27 @@ export const WORLD_EVENTS: Readonly<
 });
 
 export const WORLD_CONFIG = Object.freeze({
-  bots: Object.freeze({ normal: 6, reduced: 3, invasionExtra: 2, maximum: 8 }),
-  decorations: Object.freeze({ normal: 36, reduced: 18 }),
+  bots: Object.freeze({
+    normal: 12,
+    reduced: 6,
+    invasionExtra: 4,
+    maximum: 16,
+  }),
+  decorations: Object.freeze({ normal: 150, reduced: 72 }),
+  drops: Object.freeze({
+    ambientNormal: 22,
+    ambientReduced: 12,
+    maximum: 56,
+    lifetimeMs: 28_000,
+    respawnDelayMs: 4_000,
+    smallCount: 4,
+    mediumCount: 7,
+    giantCount: 11,
+  }),
   eventDelay: Object.freeze({ minimumMs: 18_000, maximumMs: 30_000 }),
   dangerRadius: 2,
   portalPadding: 3,
+  spawnProtectionMs: 3_500,
+  distantBotThreshold: 24,
+  camera: Object.freeze({ cellSize: 30, lerp: 0.085, deadzone: 90 }),
 });

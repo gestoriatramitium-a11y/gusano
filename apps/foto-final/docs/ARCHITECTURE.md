@@ -12,7 +12,7 @@ La aplicación es un juego HTML5 estático y autónomo. React gestiona la interf
 
 Esta capa no importa React, Phaser, APIs del DOM ni almacenamiento del navegador.
 
-`src/core/balance.ts` centraliza tablero, probabilidades, recompensas, crecimiento, efectos, evoluciones y velocidad. `src/core/world.ts` ejecuta en paralelo la simulación determinista de bots, biomas, decoración y eventos, y `src/core/worldConfig.ts` concentra sus parámetros. Los bots pueden reclamar la comida compartida, pero no cambian las colisiones del jugador. `src/core/countries.ts` define las identidades internacionales. `src/core/progress.ts` contiene el esquema de persistencia local v3 y las operaciones puras para acumular récord, partidas, comida, XP, velocidad máxima alcanzada, evolución máxima, supervivencia y métricas de balance. Migra los esquemas v1 y v2 sin inventar medias a partir de datos históricos incompletos. `src/core/challenges.ts` define y evalúa misiones y logros desde métricas compartidas; `src/core/results.ts` clasifica el rendimiento, selecciona frases deterministas y construye el texto compartible. `src/core/preferences.ts` valida país, onboarding, reducción de movimiento y calidad gráfica. La capa React es la única que lee o escribe estos estados en `localStorage`.
+`src/core/balance.ts` centraliza tablero, probabilidades, recompensas, crecimiento, efectos, evoluciones y velocidad. `src/core/world.ts` ejecuta en paralelo la simulación determinista de bots, biomas, decoración, eventos, restos, protección de aparición y colisiones entre gusanos; `src/core/worldConfig.ts` concentra sus parámetros. `endFromEnemyCollision` y `collectExternalReward` conectan la colisión del jugador y la recogida de restos con los mismos eventos de puntuación, XP, evolución y crecimiento de `game.ts`. `src/core/countries.ts` define las identidades internacionales. `src/core/progress.ts` contiene el esquema de persistencia local v3 y las operaciones puras para acumular récord, partidas, comida, XP, velocidad máxima alcanzada, evolución máxima, supervivencia y métricas de balance. Migra los esquemas v1 y v2 sin inventar medias a partir de datos históricos incompletos. `src/core/challenges.ts` define y evalúa misiones y logros desde métricas compartidas; `src/core/results.ts` clasifica el rendimiento, selecciona frases deterministas y construye el texto compartible. `src/core/preferences.ts` valida país, onboarding, reducción de movimiento y calidad gráfica. La capa React es la única que lee o escribe estos estados en `localStorage`.
 
 ### Escena Phaser
 
@@ -23,6 +23,8 @@ Esta capa no importa React, Phaser, APIs del DOM ni almacenamiento del navegador
 - interpolar posiciones entre pulsos para suavizar el movimiento sin alterar la cuadrícula lógica;
 - convertir los anclajes interpolados en una curva de microsegmentos y orientar la cabeza con su tangente;
 - dibujar el tablero, cuatro biomas, bots identificados, las cinco evoluciones y las diez comidas con primitivas Canvas;
+- mantener el mundo ampliado y la cámara siguiendo la cabeza mediante `src/game/worldCamera.ts`;
+- dibujar restos, explosiones de bots, protección de aparición y recompensas dentro del viewport;
 - reflejar crecimiento, rarezas, partículas, efectos activos, evolución y derrota;
 - publicar hacia React los cambios necesarios para la interfaz.
 
@@ -41,11 +43,12 @@ React y Phaser se comunican mediante una interfaz pequeña de eventos y comandos
 3. Al iniciar se crean los estados deterministas del jugador y del mundo y se monta la escena.
 4. Cada entrada solicita un cambio de dirección; una cola corta conserva giros rápidos y el núcleo rechaza inversiones imposibles.
 5. Cada pulso avanza jugador y mundo; los bots evalúan supervivencia, amenazas, alimento y oportunidades.
-6. Phaser interpola el resultado y emite feedback visual; React actualiza marcador, anuncios y efectos sonoros.
-7. Una colisión lleva al estado de derrota, registra una única sesión local y evalúa nuevas misiones y logros.
-8. La pantalla final muestra rendimiento, comparación con el récord, frase contextual y un reto compartible mediante Web Share o portapapeles.
-9. Volver a jugar crea estados iniciales nuevos sin recargar la aplicación; récord, identidad, métricas y desbloqueos permanecen en el navegador.
-10. Inicio pausa la carrera y pide confirmación; salir desmonta Phaser, cancela efectos transitorios y vuelve a la portada sin registrar la carrera abandonada.
+6. Phaser interpola el resultado y emite feedback visual; la cámara sigue al jugador y React mantiene el HUD fijo, anuncios y efectos sonoros.
+7. Una cabeza contra el cuerpo de un rival llama a `endFromEnemyCollision`; una cabeza que pisa un resto llama a `collectExternalReward`. Ambas transiciones son deterministas y registran sus eventos.
+8. Una colisión mortal lleva al estado de derrota, registra una única sesión local y evalúa nuevas misiones y logros.
+9. La pantalla final muestra rendimiento, comparación con el récord, frase contextual y un reto compartible mediante Web Share o portapapeles.
+10. Volver a jugar crea estados iniciales nuevos sin recargar la aplicación; récord, identidad, métricas y desbloqueos permanecen en el navegador.
+11. Inicio pausa la carrera y pide confirmación; salir desmonta Phaser, cancela efectos transitorios y vuelve a la portada sin registrar la carrera abandonada.
 
 ## Representación y responsive
 

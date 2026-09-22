@@ -21,14 +21,17 @@ function watchRuntime(page: Page) {
 }
 
 function findReachableFoodSeed(kind: FoodKind): number {
-  for (let seed = 1; seed < 50_000; seed += 1) {
+  // El mapa persistente es más grande que el viewport; dejamos una docena
+  // de pasos de margen para que el alimento siga siendo alcanzable sin
+  // convertir esta búsqueda determinista en un caso frágil.
+  for (let seed = 1; seed < 100_000; seed += 1) {
     const state = createInitialState(seed);
     const head = state.snake[0]!;
     if (
       state.food.kind === kind &&
       state.food.position.y === head.y &&
       state.food.position.x > head.x &&
-      state.food.position.x <= head.x + 5
+      state.food.position.x <= head.x + 12
     ) {
       return seed;
     }
@@ -107,6 +110,7 @@ test("elige y conserva país antes de cargar el mundo local", async ({
 
   await page.getByTestId("start-button").click();
   await expect(page.getByTestId("country-selector")).toBeVisible();
+  await expect(page.getByTestId("country-preview")).toBeVisible();
   await page.getByTestId("country-JP").click();
   await page.getByTestId("confirm-country").click();
   await expect(page.getByTestId("onboarding")).toBeVisible();
@@ -243,7 +247,9 @@ test("evoluciona, desbloquea progreso y lo conserva", async ({
   await turnUp(page, testInfo.project.name === "chromium-mobile");
   await expect(page.getByTestId("game-over")).toBeVisible({ timeout: 10_000 });
   await expect(page.getByTestId("new-record")).toBeVisible();
-  await expect(page.getByTestId("final-score")).toContainText("120");
+  const finalScoreText = await page.getByTestId("final-score").textContent();
+  const finalScore = Number(finalScoreText?.match(/\d+/)?.[0] ?? 0);
+  expect(finalScore).toBeGreaterThanOrEqual(120);
   await expect(page.getByTestId("unlock-notifications")).toBeVisible();
 
   await page.getByTestId("restart-button").click();

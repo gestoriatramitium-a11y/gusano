@@ -69,6 +69,12 @@ export class SynthAudio {
     });
   }
 
+  playElimination(): void {
+    [520, 310, 170].forEach((frequency, index) => {
+      this.playTone(frequency, 0.13, "square", index * 0.045, 0.022);
+    });
+  }
+
   close(): void {
     const context = this.context;
     this.context = null;

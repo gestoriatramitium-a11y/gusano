@@ -3,8 +3,10 @@ import {
   EVOLUTIONS,
   FOOD_CATALOG,
   FOOD_KINDS,
+  collectExternalReward,
   createInitialState,
   createSnapshot,
+  endFromEnemyCollision,
   getDifficultyLevel,
   getEvolution,
   getTickMs,
@@ -425,7 +427,7 @@ describe("colisiones, derrota y reinicio", () => {
     );
   });
 
-  it("termina la partida al chocar con el propio cuerpo", () => {
+  it("permite cruzar el propio cuerpo sin provocar una derrota", () => {
     const initial: GameState = {
       ...createInitialState(32, { width: 8, height: 6 }),
       status: "playing",
@@ -443,13 +445,11 @@ describe("colisiones, derrota y reinicio", () => {
     };
     const result = step(initial);
 
-    expect(result.state.status).toBe("game-over");
-    expect(result.events).toContainEqual({
-      type: "collision",
-      tick: 1,
-      collision: "self",
-      at: { x: 2, y: 3 },
-    });
+    expect(result.state.status).toBe("playing");
+    expect(result.state.snake[0]).toEqual({ x: 2, y: 3 });
+    expect(result.events).not.toContainEqual(
+      expect.objectContaining({ type: "collision" }),
+    );
   });
 
   it("permite entrar en la casilla que la cola abandona", () => {
@@ -470,6 +470,43 @@ describe("colisiones, derrota y reinicio", () => {
 
     expect(result.state.status).toBe("playing");
     expect(result.state.snake[0]).toEqual({ x: 2, y: 3 });
+  });
+
+  it("termina la partida al recibir una colisión de un rival", () => {
+    const initial: GameState = {
+      ...createInitialState(34),
+      status: "playing",
+    };
+    const result = endFromEnemyCollision(initial, { x: 11, y: 8 });
+
+    expect(result.state.status).toBe("game-over");
+    expect(result.events).toContainEqual({
+      type: "collision",
+      tick: initial.ticks,
+      collision: "enemy",
+      at: { x: 11, y: 8 },
+    });
+  });
+
+  it("convierte un resto externo en puntos, XP y crecimiento", () => {
+    const initial: GameState = {
+      ...createInitialState(35),
+      status: "playing",
+      score: 12,
+    };
+    const result = collectExternalReward(initial, {
+      kind: "legendary-potato",
+      points: 80,
+      experience: 20,
+      growth: 2,
+    });
+
+    expect(result.state.score).toBe(92);
+    expect(result.state.experience).toBe(20);
+    expect(result.state.growthPending).toBe(2);
+    expect(result.events[0]).toEqual(
+      expect.objectContaining({ type: "ate", points: 80, rarity: "legendary" }),
+    );
   });
 
   it("reinicia puntuación, longitud y evolución con la misma semilla", () => {

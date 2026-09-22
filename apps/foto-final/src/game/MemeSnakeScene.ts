@@ -3,8 +3,10 @@ import Phaser from "phaser";
 import {
   EVOLUTIONS,
   FOOD_CATALOG,
+  collectExternalReward,
   createInitialState,
   createSnapshot,
+  endFromEnemyCollision,
   getEvolution,
   getTickMs,
   queueDirection,
@@ -43,6 +45,11 @@ import {
   directionAlongPath,
   interpolateSnakeAnchors,
 } from "./snakeVisuals";
+import {
+  createWorldMetrics,
+  positionToWorldPixels,
+  type WorldMetrics,
+} from "./worldCamera";
 
 interface SceneCallbacks {
   onEvent(event: GameEvent): void;
@@ -56,12 +63,6 @@ interface SceneOptions extends SceneCallbacks {
   readonly initialQuality: EffectiveGraphicsQuality;
   readonly reduceMotion: boolean;
   readonly playerCountryCode: CountryCode;
-}
-
-interface BoardMetrics {
-  readonly cell: number;
-  readonly offsetX: number;
-  readonly offsetY: number;
 }
 
 const FOOD_GLYPHS: Readonly<Record<FoodKind, string>> = {
@@ -108,6 +109,8 @@ export class MemeSnakeScene extends Phaser.Scene {
   private foodLabel?: Phaser.GameObjects.Text;
   private readonly botLabels = new Map<string, Phaser.GameObjects.Text>();
   private readonly biomeLabels: Phaser.GameObjects.Text[] = [];
+  private cameraTarget?: Phaser.GameObjects.Zone;
+  private environmentViewportKey = "";
   private accumulatorMs = 0;
   private pointerStart: Position | null = null;
   private pausedUntil = 0;
@@ -191,8 +194,9 @@ export class MemeSnakeScene extends Phaser.Scene {
       );
     });
 
+    this.configureCamera();
     this.renderBoard();
-    this.renderEnvironment();
+    this.renderEnvironment(true);
     this.renderDynamic(1, 0);
     this.emitSnapshot();
   }
@@ -241,7 +245,21 @@ export class MemeSnakeScene extends Phaser.Scene {
         worldResult.notifications.forEach((event) =>
           this.callbacks.onWorldEvent(event),
         );
-        if (worldResult.foodClaimedByBot) {
+        if (worldResult.playerCollision) {
+          const collision = endFromEnemyCollision(
+            this.state,
+            this.state.snake[0]!,
+          );
+          this.state = collision.state;
+          this.handleEvents(collision.events, time);
+        } else {
+          for (const drop of worldResult.collectedDrops) {
+            const reward = collectExternalReward(this.state, drop);
+            this.state = reward.state;
+            this.handleEvents(reward.events, time);
+          }
+        }
+        if (this.state.status === "playing" && worldResult.foodClaimedByBot) {
           this.state = relocateFood(this.state, occupiedByWorld(this.world));
         }
       }
@@ -286,8 +304,10 @@ export class MemeSnakeScene extends Phaser.Scene {
     this.pausedUntil = 0;
     this.eatPulseUntil = 0;
     this.userPaused = false;
+    this.environmentViewportKey = "";
+    this.configureCamera(true);
     this.renderBoard();
-    this.renderEnvironment();
+    this.renderEnvironment(true);
     this.handleEvents(result.events, this.time.now);
     this.renderDynamic(1, this.time.now);
     this.emitSnapshot();
@@ -387,20 +407,42 @@ export class MemeSnakeScene extends Phaser.Scene {
     this.callbacks.onSnapshot(createSnapshot(this.state));
   }
 
-  private metrics(): BoardMetrics {
-    const cell = Math.min(32, 820 / this.state.width, 520 / this.state.height);
-    return {
-      cell,
-      offsetX: (900 - cell * this.state.width) / 2,
-      offsetY: (620 - cell * this.state.height) / 2,
-    };
+  private metrics(): WorldMetrics {
+    return createWorldMetrics(
+      this.state.width,
+      this.state.height,
+      WORLD_CONFIG.camera.cellSize,
+    );
   }
 
-  private toPixels(position: Position, metrics: BoardMetrics): Position {
-    return {
-      x: metrics.offsetX + position.x * metrics.cell + metrics.cell / 2,
-      y: metrics.offsetY + position.y * metrics.cell + metrics.cell / 2,
-    };
+  private toPixels(position: Position, metrics: WorldMetrics): Position {
+    return positionToWorldPixels(position, metrics);
+  }
+
+  private configureCamera(jumpToPlayer = false): void {
+    const metrics = this.metrics();
+    const camera = this.cameras.main;
+    const target = this.toPixels(this.state.snake[0]!, metrics);
+    this.cameraTarget ??= this.add.zone(target.x, target.y, 1, 1);
+    this.cameraTarget.setPosition(target.x, target.y);
+    camera.setBounds(
+      0,
+      0,
+      metrics.pixelWidth + metrics.offsetX * 2,
+      metrics.pixelHeight + metrics.offsetY * 2,
+    );
+    camera.setDeadzone(
+      WORLD_CONFIG.camera.deadzone,
+      WORLD_CONFIG.camera.deadzone * 0.72,
+    );
+    camera.startFollow(
+      this.cameraTarget,
+      true,
+      WORLD_CONFIG.camera.lerp,
+      WORLD_CONFIG.camera.lerp,
+    );
+    camera.setRoundPixels(true);
+    if (jumpToPlayer) camera.centerOn(target.x, target.y);
   }
 
   private renderBoard(): void {
@@ -489,13 +531,28 @@ export class MemeSnakeScene extends Phaser.Scene {
     });
   }
 
-  private renderEnvironment(): void {
+  private isVisible(point: Position, padding = 100): boolean {
+    const view = this.cameras.main.worldView;
+    return (
+      point.x >= view.x - padding &&
+      point.x <= view.right + padding &&
+      point.y >= view.y - padding &&
+      point.y <= view.bottom + padding
+    );
+  }
+
+  private renderEnvironment(force = false): void {
     const graphics = this.environmentGraphics;
     if (!graphics) return;
     const metrics = this.metrics();
+    const view = this.cameras.main.worldView;
+    const viewportKey = `${Math.floor(view.x / (metrics.cell * 3))}:${Math.floor(view.y / (metrics.cell * 3))}:${this.effectiveQuality}`;
+    if (!force && viewportKey === this.environmentViewportKey) return;
+    this.environmentViewportKey = viewportKey;
     graphics.clear();
     for (const decoration of this.world.decorations) {
       const point = this.toPixels(decoration, metrics);
+      if (!this.isVisible(point, metrics.cell * 3)) continue;
       const size = metrics.cell * 0.18 * decoration.scale;
       const biome = BIOMES.find(
         (candidate) => candidate.id === decoration.biomeId,
@@ -548,6 +605,14 @@ export class MemeSnakeScene extends Phaser.Scene {
     )
       return;
     const metrics = this.metrics();
+    const playerAnchors = interpolateSnakeAnchors(
+      this.previousSnake,
+      this.state.snake,
+      progress,
+    );
+    const playerHead = this.toPixels(playerAnchors[0]!, metrics);
+    this.cameraTarget?.setPosition(playerHead.x, playerHead.y);
+    this.renderEnvironment();
     this.renderWorldEffects(metrics, time);
     this.renderBots(metrics, progress, time);
     this.renderFood(metrics, time);
@@ -555,9 +620,70 @@ export class MemeSnakeScene extends Phaser.Scene {
     this.renderPlayerIdentity(metrics, progress);
   }
 
-  private renderWorldEffects(metrics: BoardMetrics, time: number): void {
+  private renderWorldEffects(metrics: WorldMetrics, time: number): void {
     const graphics = this.worldEffectsGraphics!;
     graphics.clear();
+    for (const drop of this.world.drops) {
+      const point = this.toPixels(drop.position, metrics);
+      if (!this.isVisible(point, metrics.cell * 2)) continue;
+      const definition = FOOD_CATALOG[drop.kind];
+      const pulse = this.reduceMotion
+        ? 1
+        : 1 + Math.sin(time * 0.008 + drop.position.x) * 0.08;
+      const radius =
+        metrics.cell * (drop.source === "remains" ? 0.25 : 0.19) * pulse;
+      graphics.fillStyle(
+        definition.color,
+        drop.source === "remains" ? 0.92 : 0.72,
+      );
+      if (definition.rarity === "legendary") {
+        graphics.fillTriangle(
+          point.x,
+          point.y - radius * 1.25,
+          point.x + radius,
+          point.y + radius,
+          point.x - radius,
+          point.y + radius,
+        );
+      } else {
+        graphics.fillCircle(point.x, point.y, radius);
+      }
+      if (drop.source === "remains" || definition.rarity !== "normal") {
+        graphics.lineStyle(
+          drop.source === "remains" ? 2.5 : 1.5,
+          0xffffff,
+          drop.source === "remains" ? 0.78 : 0.45,
+        );
+        graphics.strokeCircle(point.x, point.y, radius * 1.35);
+      }
+    }
+    for (const death of this.world.deaths) {
+      const point = this.toPixels(death.position, metrics);
+      if (!this.isVisible(point, metrics.cell * 3)) continue;
+      const duration = Math.max(1, death.endsAtMs - death.startedAtMs);
+      const progress = Phaser.Math.Clamp(
+        (this.state.elapsedMs - death.startedAtMs) / duration,
+        0,
+        1,
+      );
+      const color = getCountry(death.countryCode).accent;
+      graphics.lineStyle(5 - progress * 3, color, 1 - progress);
+      graphics.strokeCircle(
+        point.x,
+        point.y,
+        metrics.cell * (0.35 + progress * 1.25),
+      );
+      graphics.fillStyle(color, 0.85 - progress * 0.6);
+      const fragments = this.effectiveQuality === "reduced" ? 4 : 8;
+      for (let index = 0; index < fragments; index += 1) {
+        const angle = (Math.PI * 2 * index) / fragments + progress;
+        graphics.fillCircle(
+          point.x + Math.cos(angle) * metrics.cell * progress,
+          point.y + Math.sin(angle) * metrics.cell * progress,
+          3.5 - progress * 1.5,
+        );
+      }
+    }
     const event = this.world.activeEvent;
     const definition = event ? WORLD_EVENTS[event.kind] : null;
     const phase = time * 0.003;
@@ -571,15 +697,13 @@ export class MemeSnakeScene extends Phaser.Scene {
       }
     } else if (event?.kind === "object-rain") {
       const drops = this.effectiveQuality === "reduced" ? 8 : 16;
+      const view = this.cameras.main.worldView;
       graphics.fillStyle(definition!.color, 0.5);
       for (let index = 0; index < drops; index += 1) {
         const x =
-          metrics.offsetX +
-          (((index * 83 + time * 0.08) % (this.state.width * metrics.cell)) +
-            metrics.cell * 0.2);
+          view.x + ((index * 83 + time * 0.08) % Math.max(1, view.width));
         const y =
-          metrics.offsetY +
-          ((index * 47 + time * 0.19) % (this.state.height * metrics.cell));
+          view.y + ((index * 47 + time * 0.19) % Math.max(1, view.height));
         graphics.fillCircle(x, y, 2.4 + (index % 3));
       }
     } else if (event?.kind === "chaos-mode") {
@@ -621,23 +745,20 @@ export class MemeSnakeScene extends Phaser.Scene {
         evolutionIndex * 2,
       );
       const evolution = getEvolution(this.state);
+      const head = this.toPixels(this.state.snake[0]!, metrics);
       graphics.fillStyle(evolution.accentColor, 0.22);
       for (let index = 0; index < particles; index += 1) {
-        const x =
-          metrics.offsetX +
-          ((index * 137 + time * (0.012 + evolutionIndex * 0.004)) %
-            (metrics.cell * this.state.width));
-        const y =
-          metrics.offsetY +
-          ((index * 71 + Math.sin(phase + index) * 30 + 300) %
-            (metrics.cell * this.state.height));
+        const angle = phase * 0.45 + index * ((Math.PI * 2) / particles);
+        const distance = metrics.cell * (2.4 + (index % 3) * 0.8);
+        const x = head.x + Math.cos(angle) * distance;
+        const y = head.y + Math.sin(angle) * distance;
         graphics.fillCircle(x, y, 1.5 + evolutionIndex * 0.45);
       }
     }
   }
 
   private renderBots(
-    metrics: BoardMetrics,
+    metrics: WorldMetrics,
     progress: number,
     time: number,
   ): void {
@@ -649,6 +770,7 @@ export class MemeSnakeScene extends Phaser.Scene {
         this.botLabels.delete(id);
       }
     }
+    this.botLabels.forEach((label) => label.setVisible(false));
     graphics.clear();
     const visibleLimit =
       WORLD_CONFIG.bots[this.effectiveQuality] +
@@ -666,8 +788,10 @@ export class MemeSnakeScene extends Phaser.Scene {
       ).map((position) => this.toPixels(position, metrics));
       const path = createSmoothSnakePath(
         anchors,
-        this.effectiveQuality === "reduced" ? 1 : 2,
+        this.effectiveQuality === "reduced" ? 2 : 4,
       );
+      const head = path[0]!;
+      if (!this.isVisible(head, metrics.cell * 5)) continue;
       const country = getCountry(bot.countryCode);
       const tier = BOT_TIERS[bot.tier];
       for (let index = path.length - 1; index >= 0; index -= 1) {
@@ -680,8 +804,22 @@ export class MemeSnakeScene extends Phaser.Scene {
         graphics.fillStyle(index === 0 ? country.accent : country.primary, 0.9);
         graphics.fillCircle(point.x, point.y, radius);
       }
-      const head = path[0]!;
       const botDirection = directionAlongPath(path);
+      if (this.state.elapsedMs < bot.invulnerableUntilMs) {
+        graphics.lineStyle(2, 0xffffff, 0.48);
+        graphics.strokeCircle(
+          head.x,
+          head.y,
+          metrics.cell * 0.38 * tier.bodyScale,
+        );
+      }
+      this.renderFace(
+        graphics,
+        head,
+        metrics.cell * 0.52 * tier.bodyScale,
+        country.accent,
+        botDirection,
+      );
       this.drawCountryFlag(
         graphics,
         head.x,
@@ -708,12 +846,12 @@ export class MemeSnakeScene extends Phaser.Scene {
       label
         .setText(`${country.code} · ${bot.name}\n${botEvolutionName(bot)}`)
         .setPosition(head.x, head.y - metrics.cell * 0.82)
-        .setVisible(metrics.cell >= 24)
+        .setVisible(this.effectiveQuality === "normal")
         .setAlpha(0.88 + Math.sin(time * 0.004 + bot.phase) * 0.08);
     }
   }
 
-  private renderPlayerIdentity(metrics: BoardMetrics, progress: number): void {
+  private renderPlayerIdentity(metrics: WorldMetrics, progress: number): void {
     const anchors = interpolateSnakeAnchors(
       this.previousSnake,
       this.state.snake,
@@ -803,7 +941,7 @@ export class MemeSnakeScene extends Phaser.Scene {
     );
   }
 
-  private renderFood(metrics: BoardMetrics, time: number): void {
+  private renderFood(metrics: WorldMetrics, time: number): void {
     const graphics = this.foodGraphics!;
     const glyph = this.foodGlyph!;
     const label = this.foodLabel!;
@@ -898,7 +1036,7 @@ export class MemeSnakeScene extends Phaser.Scene {
   }
 
   private renderSnake(
-    metrics: BoardMetrics,
+    metrics: WorldMetrics,
     progress: number,
     time: number,
   ): void {
@@ -1007,6 +1145,19 @@ export class MemeSnakeScene extends Phaser.Scene {
           2.4,
         );
       }
+    }
+    if (
+      this.state.status === "playing" &&
+      this.state.elapsedMs < WORLD_CONFIG.spawnProtectionMs
+    ) {
+      const remaining =
+        1 - this.state.elapsedMs / WORLD_CONFIG.spawnProtectionMs;
+      graphics.lineStyle(3, 0xffffff, 0.3 + remaining * 0.45);
+      graphics.strokeCircle(
+        path[0]!.x,
+        path[0]!.y,
+        metrics.cell * (0.72 + (1 - remaining) * 0.1),
+      );
     }
   }
 

@@ -55,6 +55,30 @@ export function CountrySelector({
             </button>
           ))}
         </div>
+        <div className="country-worm-preview" data-testid="country-preview">
+          <span className="country-worm-preview__flag" aria-hidden="true">
+            {country.flag}
+          </span>
+          <div
+            className="country-worm-preview__worm"
+            aria-label={`Vista previa del gusano de ${country.name}`}
+          >
+            {[0, 1, 2, 3, 4, 5].map((segment) => (
+              <span
+                key={segment}
+                data-head={segment === 0 ? "true" : "false"}
+                style={{
+                  backgroundColor: `#${(segment % 2 === 0
+                    ? country.accent
+                    : country.primary
+                  )
+                    .toString(16)
+                    .padStart(6, "0")}`,
+                }}
+              />
+            ))}
+          </div>
+        </div>
         <div className="country-choice" aria-live="polite">
           <span aria-hidden="true">{country.flag}</span>
           <div>
